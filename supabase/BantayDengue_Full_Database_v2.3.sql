@@ -1,0 +1,756 @@
+-- ============================================================================
+-- BantayDengue v2.3.0 — COMPLETE DATABASE INSTALL / REPAIR SQL
+-- Generated 2026-08-11
+-- ============================================================================
+-- Review and back up the target project before running this owner-authorized
+-- script. It contains the complete base tables, Auth profile trigger, RLS,
+-- Waste Personnel role/workflow, private evidence Storage policies, account
+-- suspension, status history, notifications, and audit triggers.
+--
+-- Compatibility:
+--   * blank projects receive the canonical text roles below;
+--   * existing BantayDengue text-role projects are repaired additively;
+--   * the supplied repaired enum-role baseline is supported through role::text
+--     comparisons and must already expose the canonical enum values:
+--       resident, health_worker, waste_personnel, admin.
+--
+-- Public signup is always forced to resident. Role authorization remains in
+-- PostgreSQL RLS/triggers; it is never trusted to Flutter route checks alone.
+-- ============================================================================
+
+
+-- ============================================================================
+-- BantayDengue — Supabase schema
+-- Run this once in Supabase Studio → SQL Editor (or via `supabase db push`).
+-- Safe to re-run: every statement uses IF NOT EXISTS / OR REPLACE.
+-- ============================================================================
+
+create extension if not exists "uuid-ossp";
+
+-- ── profiles ────────────────────────────────────────────────────────────────
+-- One row per auth.users row. Role lives here, never on the client.
+create table if not exists public.profiles (
+  id          uuid primary key references auth.users(id) on delete cascade,
+  full_name   text not null default '',
+  email       text not null default '',
+  phone       text,
+  role        text not null default 'resident' check (role in ('resident','health_worker','admin')),
+  barangay    text,
+  photo_url   text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+-- ── reports (dengue cases + breeding sites) ────────────────────────────────
+create table if not exists public.reports (
+  id              uuid primary key default uuid_generate_v4(),
+  reporter_id     uuid not null references public.profiles(id) on delete cascade,
+  report_type     text not null check (report_type in ('dengue_case','breeding_site')),
+  description     text,
+  photo_url       text,
+  latitude        double precision,
+  longitude       double precision,
+  location_text   text,
+  status          text not null default 'pending' check (status in ('pending','under_review','verified','rejected','resolved')),
+  reviewed_by     uuid references public.profiles(id),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+-- ── appointments ────────────────────────────────────────────────────────────
+create table if not exists public.appointments (
+  id              uuid primary key default uuid_generate_v4(),
+  patient_id      uuid not null references public.profiles(id) on delete cascade,
+  assigned_doctor uuid references public.profiles(id),
+  scheduled_at    timestamptz not null,
+  reason          text,
+  status          text not null default 'pending' check (status in ('pending','approved','rejected','completed','cancelled')),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+-- ── waste_requests ──────────────────────────────────────────────────────────
+create table if not exists public.waste_requests (
+  id              uuid primary key default uuid_generate_v4(),
+  requester_id    uuid not null references public.profiles(id) on delete cascade,
+  description     text,
+  latitude        double precision,
+  longitude       double precision,
+  location_text   text,
+  status          text not null default 'pending' check (status in ('pending','scheduled','collected','cancelled')),
+  scheduled_at    timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+-- ── notifications ───────────────────────────────────────────────────────────
+create table if not exists public.notifications (
+  id          uuid primary key default uuid_generate_v4(),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  title       text not null,
+  body        text,
+  type        text not null default 'general' check (type in ('general','outbreak_alert','advisory','appointment','report_status','waste')),
+  read        boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+-- ── health_advisories ───────────────────────────────────────────────────────
+create table if not exists public.health_advisories (
+  id           uuid primary key default uuid_generate_v4(),
+  author_id    uuid references public.profiles(id),
+  title        text not null,
+  body         text not null,
+  created_at   timestamptz not null default now()
+);
+
+-- ── hotspots ─────────────────────────────────────────────────────────────────
+create table if not exists public.hotspots (
+  id           uuid primary key default uuid_generate_v4(),
+  latitude     double precision not null,
+  longitude    double precision not null,
+  risk_level   text not null default 'low' check (risk_level in ('low','moderate','high')),
+  barangay     text,
+  case_count   integer not null default 0,
+  updated_at   timestamptz not null default now()
+);
+
+-- ── announcements (admin) ───────────────────────────────────────────────────
+create table if not exists public.announcements (
+  id           uuid primary key default uuid_generate_v4(),
+  author_id    uuid references public.profiles(id),
+  title        text not null,
+  body         text not null,
+  created_at   timestamptz not null default now()
+);
+
+-- ── system_activity (admin audit log) ──────────────────────────────────────
+create table if not exists public.system_activity (
+  id           uuid primary key default uuid_generate_v4(),
+  actor_id     uuid references public.profiles(id),
+  action       text not null,
+  details      jsonb,
+  created_at   timestamptz not null default now()
+);
+
+-- ============================================================================
+-- Auto-create a profile row whenever someone signs up. Role is ALWAYS
+-- forced to 'resident' here; signup can never set health_worker/admin.
+-- ============================================================================
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, full_name, email, role)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name', ''),
+    new.email,
+    'resident'
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+-- ============================================================================
+-- Row Level Security
+-- ============================================================================
+alter table public.profiles          enable row level security;
+alter table public.reports           enable row level security;
+alter table public.appointments      enable row level security;
+alter table public.waste_requests    enable row level security;
+alter table public.notifications     enable row level security;
+alter table public.health_advisories enable row level security;
+alter table public.hotspots          enable row level security;
+alter table public.announcements     enable row level security;
+alter table public.system_activity   enable row level security;
+
+-- Helper: current user's role, read straight from the table (not the JWT),
+-- so a promoted/demoted user is respected immediately.
+create or replace function public.current_role()
+returns text
+language sql stable
+security definer set search_path = public
+as $$
+  select role::text from public.profiles where id = auth.uid();
+$$;
+
+-- ── profiles policies ───────────────────────────────────────────────────────
+drop policy if exists "profiles_select_own_or_staff" on public.profiles;
+create policy "profiles_select_own_or_staff" on public.profiles
+  for select using (
+    id = auth.uid() or public.current_role() in ('health_worker','admin')
+  );
+
+drop policy if exists "profiles_insert_own_default_role" on public.profiles;
+create policy "profiles_insert_own_default_role" on public.profiles
+  for insert with check (
+    id = auth.uid()
+    and role = 'resident'
+    and email = coalesce(auth.jwt() ->> 'email', '')
+  );
+
+drop policy if exists "profiles_update_own_limited" on public.profiles;
+create policy "profiles_update_own_limited" on public.profiles
+  for update using (id = auth.uid())
+  with check (id = auth.uid() and role = (select role from public.profiles where id = auth.uid()));
+  -- ^ users can edit their own name/phone/barangay/photo, but the `role`
+  --   column can never change through this policy — only a service-role
+  --   admin action (server-side) can promote someone to health_worker/admin.
+
+drop policy if exists "profiles_admin_update_role" on public.profiles;
+create policy "profiles_admin_update_role" on public.profiles
+  for update using (public.current_role() = 'admin')
+  with check (true);
+
+-- ── reports policies ────────────────────────────────────────────────────────
+drop policy if exists "reports_insert_own" on public.reports;
+create policy "reports_insert_own" on public.reports
+  for insert with check (reporter_id = auth.uid());
+
+drop policy if exists "reports_select_own_or_staff" on public.reports;
+create policy "reports_select_own_or_staff" on public.reports
+  for select using (reporter_id = auth.uid() or public.current_role() in ('health_worker','admin'));
+
+drop policy if exists "reports_update_staff_only" on public.reports;
+create policy "reports_update_staff_only" on public.reports
+  for update using (public.current_role() in ('health_worker','admin'));
+
+-- ── appointments policies ───────────────────────────────────────────────────
+drop policy if exists "appointments_insert_own" on public.appointments;
+create policy "appointments_insert_own" on public.appointments
+  for insert with check (patient_id = auth.uid());
+
+drop policy if exists "appointments_select_own_or_staff" on public.appointments;
+create policy "appointments_select_own_or_staff" on public.appointments
+  for select using (patient_id = auth.uid() or public.current_role() in ('health_worker','admin'));
+
+drop policy if exists "appointments_update_own_or_staff" on public.appointments;
+create policy "appointments_update_own_or_staff" on public.appointments
+  for update using (patient_id = auth.uid() or public.current_role() in ('health_worker','admin'));
+
+-- ── waste_requests policies ─────────────────────────────────────────────────
+drop policy if exists "waste_insert_own" on public.waste_requests;
+create policy "waste_insert_own" on public.waste_requests
+  for insert with check (requester_id = auth.uid());
+
+drop policy if exists "waste_select_own_or_staff" on public.waste_requests;
+create policy "waste_select_own_or_staff" on public.waste_requests
+  for select using (requester_id = auth.uid() or public.current_role() in ('health_worker','admin'));
+
+drop policy if exists "waste_update_staff_only" on public.waste_requests;
+create policy "waste_update_staff_only" on public.waste_requests
+  for update using (public.current_role() in ('health_worker','admin'));
+
+-- ── notifications policies ──────────────────────────────────────────────────
+drop policy if exists "notifications_select_own" on public.notifications;
+create policy "notifications_select_own" on public.notifications
+  for select using (user_id = auth.uid());
+
+drop policy if exists "notifications_update_own" on public.notifications;
+create policy "notifications_update_own" on public.notifications
+  for update using (user_id = auth.uid());
+
+drop policy if exists "notifications_insert_staff" on public.notifications;
+create policy "notifications_insert_staff" on public.notifications
+  for insert with check (public.current_role() in ('health_worker','admin'));
+
+-- ── health_advisories / hotspots: public read, staff write ────────────────
+drop policy if exists "advisories_read_all" on public.health_advisories;
+create policy "advisories_read_all" on public.health_advisories for select using (true);
+drop policy if exists "advisories_write_staff" on public.health_advisories;
+create policy "advisories_write_staff" on public.health_advisories
+  for all using (public.current_role() in ('health_worker','admin')) with check (public.current_role() in ('health_worker','admin'));
+
+drop policy if exists "hotspots_read_all" on public.hotspots;
+create policy "hotspots_read_all" on public.hotspots for select using (true);
+drop policy if exists "hotspots_write_staff" on public.hotspots;
+create policy "hotspots_write_staff" on public.hotspots
+  for all using (public.current_role() in ('health_worker','admin')) with check (public.current_role() in ('health_worker','admin'));
+
+-- ── announcements: public read, admin write ────────────────────────────────
+drop policy if exists "announcements_read_all" on public.announcements;
+create policy "announcements_read_all" on public.announcements for select using (true);
+drop policy if exists "announcements_write_admin" on public.announcements;
+create policy "announcements_write_admin" on public.announcements
+  for all using (public.current_role() = 'admin') with check (public.current_role() = 'admin');
+
+-- ── system_activity: admin only ─────────────────────────────────────────────
+drop policy if exists "activity_admin_only" on public.system_activity;
+create policy "activity_admin_only" on public.system_activity
+  for all using (public.current_role() = 'admin') with check (public.current_role() = 'admin');
+
+-- ============================================================================
+-- To assign an authorized role, run manually as a project owner:
+--   update public.profiles set role = 'waste_personnel' where email = 'collector@example.com';
+-- Never expose this capability to a public-facing screen without checking
+-- current_role() = 'admin' server-side first.
+-- ============================================================================
+
+
+-- ============================================================================
+-- v2.3 additive security and operations layer
+-- ============================================================================
+
+-- BantayDengue v2.3 additive integration migration
+-- Apply after supabase/schema.sql. Designed for the existing hosted project:
+-- it preserves all current rows and adds the Waste Personnel role, account
+-- access control, private evidence, workflow history, notifications, and audit.
+
+begin;
+
+-- ── Profiles and role compatibility ────────────────────────────────────────
+alter table public.profiles
+  add column if not exists is_active boolean not null default true;
+
+-- Canonicalize aliases previously used by the Flutter client. This works for
+-- a text role column and for the supplied enum-role baseline, whose enum
+-- already contains `waste_personnel`.
+update public.profiles
+set role = 'waste_personnel'
+where role::text in ('waste_staff', 'waste_management');
+
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles
+  add constraint profiles_role_check
+  check (role::text in ('resident', 'health_worker', 'waste_personnel', 'admin')) not valid;
+alter table public.profiles validate constraint profiles_role_check;
+
+create or replace function public.current_role()
+returns text
+language sql stable
+security definer
+set search_path = public
+as $$
+  select role::text
+  from public.profiles
+  where id = auth.uid() and is_active = true;
+$$;
+
+create or replace function public.current_account_active()
+returns boolean
+language sql stable
+security definer
+set search_path = public
+as $$
+  select coalesce((select is_active from public.profiles where id = auth.uid()), false);
+$$;
+
+-- RLS WITH CHECK expressions cannot safely compare OLD and NEW rows. Enforce
+-- privileged profile fields in a trigger so a resident cannot promote or
+-- reactivate an account through a handcrafted REST request.
+create or replace function public.protect_profile_privileged_fields()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.id is distinct from old.id then
+    raise exception 'Profile IDs cannot be changed' using errcode = '42501';
+  end if;
+
+  if auth.uid() is not null
+     and coalesce(public.current_role(), '') <> 'admin'
+     and (
+       new.role is distinct from old.role
+       or new.is_active is distinct from old.is_active
+       or new.email is distinct from old.email
+     ) then
+    raise exception 'Only an administrator may change profile access fields'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_protect_privileged_fields on public.profiles;
+create trigger profiles_protect_privileged_fields
+  before update on public.profiles
+  for each row execute function public.protect_profile_privileged_fields();
+
+-- ── Richer waste evidence and assignment metadata ──────────────────────────
+alter table public.waste_requests
+  add column if not exists photo_url text,
+  add column if not exists handled_by uuid references public.profiles(id),
+  add column if not exists completion_photo_url text;
+
+-- ── Status history ─────────────────────────────────────────────────────────
+create table if not exists public.status_history (
+  id uuid primary key default uuid_generate_v4(),
+  entity_type text not null check (entity_type in ('report', 'appointment', 'waste_request')),
+  entity_id uuid not null,
+  old_status text,
+  new_status text not null,
+  changed_by uuid references public.profiles(id),
+  note text,
+  created_at timestamptz not null default now()
+);
+create index if not exists status_history_entity_idx
+  on public.status_history(entity_type, entity_id, created_at desc);
+alter table public.status_history enable row level security;
+
+-- ── RLS: suspended accounts cannot perform operational actions ─────────────
+drop policy if exists "reports_insert_own" on public.reports;
+create policy "reports_insert_own" on public.reports
+  for insert with check (reporter_id = auth.uid() and public.current_account_active());
+
+drop policy if exists "reports_select_own_or_staff" on public.reports;
+create policy "reports_select_own_or_staff" on public.reports
+  for select using (
+    public.current_account_active()
+    and (reporter_id = auth.uid() or public.current_role() in ('health_worker', 'admin'))
+  );
+
+drop policy if exists "reports_update_staff_only" on public.reports;
+create policy "reports_update_staff_only" on public.reports
+  for update using (public.current_role() in ('health_worker', 'admin'))
+  with check (public.current_role() in ('health_worker', 'admin'));
+
+drop policy if exists "appointments_insert_own" on public.appointments;
+create policy "appointments_insert_own" on public.appointments
+  for insert with check (patient_id = auth.uid() and public.current_account_active());
+
+drop policy if exists "appointments_select_own_or_staff" on public.appointments;
+create policy "appointments_select_own_or_staff" on public.appointments
+  for select using (
+    public.current_account_active()
+    and (patient_id = auth.uid() or public.current_role() in ('health_worker', 'admin'))
+  );
+
+drop policy if exists "appointments_update_own_or_staff" on public.appointments;
+create policy "appointments_update_own_or_staff" on public.appointments
+  for update using (
+    public.current_account_active()
+    and (patient_id = auth.uid() or public.current_role() in ('health_worker', 'admin'))
+  )
+  with check (
+    public.current_account_active()
+    and (patient_id = auth.uid() or public.current_role() in ('health_worker', 'admin'))
+  );
+
+drop policy if exists "waste_insert_own" on public.waste_requests;
+create policy "waste_insert_own" on public.waste_requests
+  for insert with check (requester_id = auth.uid() and public.current_account_active());
+
+drop policy if exists "waste_select_own_or_staff" on public.waste_requests;
+create policy "waste_select_own_or_staff" on public.waste_requests
+  for select using (
+    public.current_account_active()
+    and (requester_id = auth.uid() or public.current_role() in ('health_worker', 'waste_personnel', 'admin'))
+  );
+
+drop policy if exists "waste_update_staff_only" on public.waste_requests;
+create policy "waste_update_staff_only" on public.waste_requests
+  for update using (public.current_role() in ('health_worker', 'waste_personnel', 'admin'))
+  with check (public.current_role() in ('health_worker', 'waste_personnel', 'admin'));
+
+drop policy if exists "profiles_select_own_or_staff" on public.profiles;
+create policy "profiles_select_own_or_staff" on public.profiles
+  for select using (
+    id = auth.uid()
+    or public.current_role() in ('health_worker', 'waste_personnel', 'admin')
+  );
+
+-- Keep self-service profile changes from altering role or access state.
+drop policy if exists "profiles_update_own_limited" on public.profiles;
+create policy "profiles_update_own_limited" on public.profiles
+  for update using (id = auth.uid() and public.current_account_active())
+  with check (
+    id = auth.uid()
+    and role::text = public.current_role()
+    and is_active = true
+  );
+
+drop policy if exists "profiles_admin_update_role" on public.profiles;
+create policy "profiles_admin_update_role" on public.profiles
+  for update using (public.current_role() = 'admin')
+  with check (public.current_role() = 'admin');
+
+drop policy if exists "notifications_select_own" on public.notifications;
+create policy "notifications_select_own" on public.notifications
+  for select using (user_id = auth.uid() and public.current_account_active());
+
+drop policy if exists "notifications_update_own" on public.notifications;
+create policy "notifications_update_own" on public.notifications
+  for update using (user_id = auth.uid() and public.current_account_active())
+  with check (user_id = auth.uid() and public.current_account_active());
+
+drop policy if exists "notifications_insert_staff" on public.notifications;
+create policy "notifications_insert_staff" on public.notifications
+  for insert with check (public.current_role() in ('health_worker', 'admin'));
+-- Waste workflow notifications are emitted by the security-definer status
+-- trigger; personnel do not receive arbitrary notification-insert access.
+
+-- Waste Personnel can read maps/advisories but only health workers/admins classify
+-- hotspots and publish clinical/public-health guidance.
+drop policy if exists "hotspots_write_staff" on public.hotspots;
+create policy "hotspots_write_staff" on public.hotspots
+  for all using (public.current_role() in ('health_worker', 'admin'))
+  with check (public.current_role() in ('health_worker', 'admin'));
+
+drop policy if exists "advisories_write_staff" on public.health_advisories;
+create policy "advisories_write_staff" on public.health_advisories
+  for all using (public.current_role() in ('health_worker', 'admin'))
+  with check (public.current_role() in ('health_worker', 'admin'));
+
+-- Residents see history for their own records; authorized operational staff
+-- see only history relevant to their assigned domain.
+drop policy if exists "status_history_read_authorized" on public.status_history;
+create policy "status_history_read_authorized" on public.status_history
+  for select using (
+    public.current_role() = 'admin'
+    or (entity_type = 'report' and (
+      public.current_role() = 'health_worker'
+      or exists (select 1 from public.reports r where r.id = entity_id and r.reporter_id = auth.uid())
+    ))
+    or (entity_type = 'appointment' and (
+      public.current_role() = 'health_worker'
+      or exists (select 1 from public.appointments a where a.id = entity_id and a.patient_id = auth.uid())
+    ))
+    or (entity_type = 'waste_request' and (
+      public.current_role() in ('health_worker', 'waste_personnel')
+      or exists (select 1 from public.waste_requests w where w.id = entity_id and w.requester_id = auth.uid())
+    ))
+  );
+
+-- ── Authoritative workflow history, notification and audit triggers ─────────
+-- Reject skipped/reversed workflow states even when a caller bypasses the UI.
+create or replace function public.validate_workflow_transition()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status is not distinct from old.status then return new; end if;
+
+  if tg_table_name = 'reports' then
+    if not (
+      (old.status = 'pending' and new.status in ('under_review', 'verified', 'rejected'))
+      or (old.status = 'under_review' and new.status in ('verified', 'rejected'))
+      or (old.status = 'verified' and new.status = 'resolved')
+    ) then
+      raise exception 'Invalid report status transition: % -> %', old.status, new.status
+        using errcode = '23514';
+    end if;
+  elsif tg_table_name = 'appointments' then
+    if not (
+      (old.status = 'pending' and new.status in ('approved', 'rejected', 'cancelled'))
+      or (old.status = 'approved' and new.status in ('completed', 'cancelled'))
+    ) then
+      raise exception 'Invalid appointment status transition: % -> %', old.status, new.status
+        using errcode = '23514';
+    end if;
+  elsif tg_table_name = 'waste_requests' then
+    if not (
+      (old.status = 'pending' and new.status in ('scheduled', 'cancelled'))
+      or (old.status = 'scheduled' and new.status in ('collected', 'cancelled'))
+    ) then
+      raise exception 'Invalid waste status transition: % -> %', old.status, new.status
+        using errcode = '23514';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+-- Residents may cancel their own pending/approved appointments, but may not
+-- approve, complete, reassign, or otherwise edit appointment records directly.
+create or replace function public.protect_patient_appointment_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() = old.patient_id
+     and coalesce(public.current_role(), '') not in ('health_worker', 'admin')
+     and (
+       new.status <> 'cancelled'
+       or old.status not in ('pending', 'approved')
+       or new.patient_id is distinct from old.patient_id
+       or new.assigned_doctor is distinct from old.assigned_doctor
+       or new.scheduled_at is distinct from old.scheduled_at
+       or new.reason is distinct from old.reason
+       or new.created_at is distinct from old.created_at
+     ) then
+    raise exception 'Patients may only cancel their own active appointments'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+-- Waste Personnel may update workflow fields but cannot rewrite resident
+-- ownership, submission evidence, or location details. A collection claimed by
+-- one personnel account cannot be completed or cancelled by another.
+create or replace function public.protect_waste_personnel_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.current_role() <> 'waste_personnel' then
+    return new;
+  end if;
+
+  if new.requester_id is distinct from old.requester_id
+     or new.description is distinct from old.description
+     or new.latitude is distinct from old.latitude
+     or new.longitude is distinct from old.longitude
+     or new.location_text is distinct from old.location_text
+     or new.photo_url is distinct from old.photo_url
+     or new.created_at is distinct from old.created_at then
+    raise exception 'Waste Personnel cannot rewrite resident request details'
+      using errcode = '42501';
+  end if;
+
+  if old.handled_by is not null and old.handled_by <> auth.uid() then
+    raise exception 'This collection is assigned to another personnel account'
+      using errcode = '42501';
+  end if;
+
+  if new.status in ('scheduled', 'collected') and new.handled_by is null then
+    new.handled_by := auth.uid();
+  end if;
+
+  if new.handled_by is not null and new.handled_by <> auth.uid() then
+    raise exception 'Waste Personnel may only assign a collection to themselves'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists reports_validate_status on public.reports;
+create trigger reports_validate_status before update of status on public.reports
+  for each row execute function public.validate_workflow_transition();
+drop trigger if exists appointments_protect_patient_update on public.appointments;
+create trigger appointments_protect_patient_update before update on public.appointments
+  for each row execute function public.protect_patient_appointment_update();
+drop trigger if exists appointments_validate_status on public.appointments;
+create trigger appointments_validate_status before update of status on public.appointments
+  for each row execute function public.validate_workflow_transition();
+drop trigger if exists waste_protect_personnel_update on public.waste_requests;
+create trigger waste_protect_personnel_update before update on public.waste_requests
+  for each row execute function public.protect_waste_personnel_update();
+drop trigger if exists waste_validate_status on public.waste_requests;
+create trigger waste_validate_status before update of status on public.waste_requests
+  for each row execute function public.validate_workflow_transition();
+
+create or replace function public.capture_status_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  entity text;
+  recipient uuid;
+  notification_type text;
+  notification_title text;
+begin
+  if new.status is not distinct from old.status then return new; end if;
+
+  if tg_table_name = 'reports' then
+    entity := 'report'; recipient := new.reporter_id;
+    notification_type := 'report_status'; notification_title := 'Report status updated';
+  elsif tg_table_name = 'appointments' then
+    entity := 'appointment'; recipient := new.patient_id;
+    notification_type := 'appointment'; notification_title := 'Appointment updated';
+  elsif tg_table_name = 'waste_requests' then
+    entity := 'waste_request'; recipient := new.requester_id;
+    notification_type := 'waste'; notification_title := 'Waste request updated';
+  else
+    return new;
+  end if;
+
+  insert into public.status_history(entity_type, entity_id, old_status, new_status, changed_by)
+  values (entity, new.id, old.status, new.status, auth.uid());
+
+  insert into public.notifications(user_id, title, body, type)
+  values (
+    recipient,
+    notification_title,
+    'Status changed from ' || replace(old.status, '_', ' ') || ' to ' || replace(new.status, '_', ' ') || '.',
+    notification_type
+  );
+
+  insert into public.system_activity(actor_id, action, details)
+  values (
+    auth.uid(),
+    entity || '_status_changed',
+    jsonb_build_object('entity_id', new.id, 'old_status', old.status, 'new_status', new.status)
+  );
+  return new;
+end;
+$$;
+
+-- Drop first so this migration is safely re-runnable.
+drop trigger if exists reports_capture_status on public.reports;
+create trigger reports_capture_status after update of status on public.reports
+  for each row execute function public.capture_status_change();
+drop trigger if exists appointments_capture_status on public.appointments;
+create trigger appointments_capture_status after update of status on public.appointments
+  for each row execute function public.capture_status_change();
+drop trigger if exists waste_capture_status on public.waste_requests;
+create trigger waste_capture_status after update of status on public.waste_requests
+  for each row execute function public.capture_status_change();
+
+-- ── Private Storage buckets and object policies ─────────────────────────────
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('report-evidence', 'report-evidence', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  public = false,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('waste-evidence', 'waste-evidence', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  public = false,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "evidence_owner_insert" on storage.objects;
+create policy "evidence_owner_insert" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id in ('report-evidence', 'waste-evidence')
+    and (storage.foldername(name))[1] = auth.uid()::text
+    and public.current_account_active()
+  );
+
+drop policy if exists "evidence_authorized_read" on storage.objects;
+create policy "evidence_authorized_read" on storage.objects
+  for select to authenticated
+  using (
+    public.current_account_active()
+    and bucket_id in ('report-evidence', 'waste-evidence')
+    and (
+      (storage.foldername(name))[1] = auth.uid()::text
+      or public.current_role() in ('health_worker', 'admin')
+      or (bucket_id = 'waste-evidence' and public.current_role() = 'waste_personnel')
+    )
+  );
+
+drop policy if exists "evidence_owner_delete" on storage.objects;
+create policy "evidence_owner_delete" on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id in ('report-evidence', 'waste-evidence')
+    and (storage.foldername(name))[1] = auth.uid()::text
+    and public.current_account_active()
+  );
+
+commit;

@@ -1,0 +1,54 @@
+name: bantay_dengue
+description: BantayDengue - Community Dengue Surveillance & Health Management System (SDG 3)
+publish_to: 'none'
+version: 2.3.0+4
+
+environment:
+  sdk: '>=3.9.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Navigation
+  go_router: ^13.0.0
+
+  # UI & Fonts
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  flutter_svg: ^2.0.9
+
+  # Charts, OpenStreetMap and location visualization
+  fl_chart: ^0.67.0
+  flutter_map: ^8.3.1
+  latlong2: ^0.9.1
+  url_launcher: ^6.3.2
+
+  # Images
+  image_picker: ^1.1.2
+
+  # Location: "use my current location" instead of asking residents to
+  # type raw latitude/longitude — almost nobody knows their own coordinates
+  # by heart, and hand-typed numbers are an easy source of wrong pins.
+  geolocator: ^13.0.2
+
+  # Date & Calendar
+  intl: ^0.19.0
+  table_calendar: ^3.1.0
+
+  # Local Storage (Phase 2 addition)
+  shared_preferences: ^2.2.2
+
+  # HTTP & API (Phase 2 addition — for AI Assistant)
+  http: ^1.2.0
+
+  # Backend (Phase 3 — Supabase migration)
+  supabase_flutter: ^2.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
