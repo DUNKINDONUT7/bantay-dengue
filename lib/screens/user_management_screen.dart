@@ -47,12 +47,26 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   }
 
   Future<void> _changeRole(Map<String, dynamic> user, String role) async {
-    final old = '${user['role']}';
+    final old = _canonicalRole(user['role']);
     if (old == role) return;
+    if (old == 'admin' && role != 'admin') {
+      final adminCount = _users
+          .where((u) => _canonicalRole(u['role']) == 'admin')
+          .length;
+      if (adminCount <= 1) {
+        showMessage(
+          context,
+          'Cannot change this role — at least one administrator must remain.',
+          error: true,
+        );
+        return;
+      }
+    }
     try {
       await DatabaseService.instance.updateUserRole('${user['id']}', role);
+      if (!mounted) return;
       setState(() => user['role'] = role);
-      if (mounted) showMessage(context, 'Role updated to ${humanize(role)}.');
+      showMessage(context, 'Role updated to ${humanize(role)}.');
     } catch (error) {
       if (mounted) showMessage(context, errorMessage(error), error: true);
     }
@@ -69,13 +83,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     }
     try {
       await DatabaseService.instance.setUserActive('${user['id']}', active);
+      if (!mounted) return;
       setState(() => user['is_active'] = active);
-      if (mounted) {
-        showMessage(
-          context,
-          active ? 'Account reactivated.' : 'Account suspended.',
-        );
-      }
+      showMessage(
+        context,
+        active ? 'Account reactivated.' : 'Account suspended.',
+      );
     } catch (error) {
       if (mounted) showMessage(context, errorMessage(error), error: true);
     }
@@ -100,6 +113,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
               action: IconButton(
                 onPressed: _load,
                 icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
               ),
             ),
             Padding(

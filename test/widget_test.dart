@@ -17,6 +17,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    // supabase_flutter persists its session via SharedPreferences under the
+    // hood; the test harness has no real platform-channel implementation for
+    // it, so it must be mocked before Supabase.initialize() runs.
     SharedPreferences.setMockInitialValues({});
     await Supabase.initialize(
       url: SupabaseConfig.url,
@@ -59,7 +62,7 @@ void main() {
     var cancelled = false;
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.darkTheme,
+        theme: AppTheme.theme,
         home: EntrySyncView(onCancel: () => cancelled = true),
       ),
     );
@@ -84,17 +87,19 @@ void main() {
     }
   });
 
-  test('dark primary controls use high-contrast monochrome foreground', () {
-    final scheme = AppTheme.darkTheme.colorScheme;
+  test('primary/onPrimary controls stay high-contrast (ink on cream)', () {
+    final scheme = AppTheme.theme.colorScheme;
     expect(scheme.primary, AppColors.primary);
     expect(scheme.onPrimary, AppColors.onPrimary);
+    // Editorial cream theme: primary is the near-black "ink" fill used for
+    // CTAs, onPrimary is the cream text drawn on top of it.
     expect(
       ThemeData.estimateBrightnessForColor(scheme.primary),
-      Brightness.light,
+      Brightness.dark,
     );
     expect(
       ThemeData.estimateBrightnessForColor(scheme.onPrimary),
-      Brightness.dark,
+      Brightness.light,
     );
   });
 
@@ -105,13 +110,13 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      MaterialApp(theme: AppTheme.darkTheme, home: const SplashScreen()),
+      MaterialApp(theme: AppTheme.theme, home: const SplashScreen()),
     );
     expect(find.text('Report sooner.\nRespond smarter.'), findsOneWidget);
-    expect(find.text('Create resident account'), findsOneWidget);
+    expect(find.text('Get started'), findsOneWidget);
 
     await tester.pumpWidget(
-      MaterialApp(theme: AppTheme.darkTheme, home: const LoginScreen()),
+      MaterialApp(theme: AppTheme.theme, home: const LoginScreen()),
     );
     await tester.pump();
     expect(find.text('Welcome back'), findsOneWidget);
@@ -129,7 +134,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.darkTheme,
+        theme: AppTheme.theme,
         home: const WastePersonnelAccountScreen(),
       ),
     );

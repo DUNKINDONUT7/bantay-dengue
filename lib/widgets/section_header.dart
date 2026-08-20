@@ -17,7 +17,7 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -26,7 +26,7 @@ class SectionHeader extends StatelessWidget {
               onTap: onBack,
               radius: 20,
               child: const Padding(
-                padding: EdgeInsets.only(top: 2, right: 4),
+                padding: EdgeInsets.only(top: 6, right: 4),
                 child: Icon(Icons.arrow_back, size: 22),
               ),
             ),
@@ -36,14 +36,9 @@ class SectionHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text(title, style: Theme.of(context).textTheme.headlineSmall),
                 if (subtitle != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
                     subtitle!,
                     style: Theme.of(context).textTheme.bodyMedium,

@@ -1,3 +1,4 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders, json } from '../_shared/cors.ts';
 
 const emergencyPattern = /bleeding|pagdurugo|hirap huminga|difficulty breathing|severe abdominal|matinding sakit|persistent vomiting|tuloy-tuloy na pagsusuka|faint|unconscious/i;
@@ -9,6 +10,45 @@ Deno.serve(async (request: Request) => {
 
   const auth = request.headers.get('Authorization');
   if (!auth?.startsWith('Bearer ')) return json({ error: 'Authentication required' }, 401);
+  const token = auth.slice('Bearer '.length);
+
+  // Verify the caller's identity from their own token — never trust a
+  // client-supplied user id. SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY are
+  // injected automatically into every Edge Function; no manual secret
+  // needed for these three.
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: auth } },
+  });
+  const { data: userData, error: userError } = await userClient.auth.getUser(token);
+  if (userError || !userData?.user) return json({ error: 'Invalid or expired session' }, 401);
+
+  // Real, database-enforced rate limit (see
+  // supabase/RATE_LIMIT_AI_ASSISTANT.sql) — the client-side cooldown in
+  // ai_chat_screen.dart deters accidental spam, this is what actually stops
+  // a script hitting this function directly with a valid token from burning
+  // AI provider quota/cost.
+  const adminClient = createClient(supabaseUrl, serviceRoleKey);
+  const { data: allowed, error: rateLimitError } = await adminClient.rpc(
+    'check_and_log_ai_request',
+    { p_user_id: userData.user.id },
+  );
+  if (rateLimitError) {
+    console.error('Rate limit check failed', rateLimitError);
+    return json({ error: 'Guidance service is temporarily unavailable' }, 502);
+  }
+  if (!allowed) {
+    return json(
+      {
+        error: 'Too many questions in a short time. Please wait a moment before asking again.',
+        code: 'rate_limited',
+      },
+      429,
+    );
+  }
 
   let message = '';
   try {
@@ -38,14 +78,22 @@ Deno.serve(async (request: Request) => {
     body: JSON.stringify({
       model,
       temperature: 0.2,
-      max_tokens: 350,
+      max_completion_tokens: 350,
       messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: message }],
     }),
   });
 
   if (!upstream.ok) {
-    console.error('AI provider failure', upstream.status); // Never log the health message.
-    return json({ error: 'Guidance service is temporarily unavailable' }, 502);
+    // Log the upstream body too (never the health message) — this is the
+    // one piece of information the Supabase dashboard logs can't give you
+    // without digging, and it's usually the exact reason (bad model name,
+    // bad key, wrong base URL).
+    const errorBody = await upstream.text().catch(() => '<unreadable>');
+    console.error('AI provider failure', upstream.status, errorBody);
+    return json(
+      { error: 'Guidance service is temporarily unavailable', upstream_status: upstream.status },
+      502,
+    );
   }
   const result = await upstream.json();
   const reply = String(result?.choices?.[0]?.message?.content ?? '').trim();

@@ -112,13 +112,11 @@ class _DengueStatsCardState extends State<DengueStatsCard> {
                     ),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? AppColors.primaryGlow
-                          : AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(20),
+                          ? AppColors.ink
+                          : AppColors.surfaceCard,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
                       border: Border.all(
-                        color: isSelected
-                            ? AppColors.primary
-                            : AppColors.border,
+                        color: isSelected ? AppColors.ink : AppColors.border,
                       ),
                     ),
                     child: Center(
@@ -126,7 +124,7 @@ class _DengueStatsCardState extends State<DengueStatsCard> {
                         option.label,
                         style: TextStyle(
                           color: isSelected
-                              ? AppColors.primary
+                              ? AppColors.onPrimary
                               : AppColors.textSecondary,
                           fontSize: 12,
                           fontWeight: isSelected
@@ -155,6 +153,7 @@ class _DengueStatsCardState extends State<DengueStatsCard> {
           _MortalityTrendSection(
             key: ValueKey('mortality-$_selectedIso3'),
             future: _mortalityFuture,
+            countryLabel: _countryLabel,
             onRefresh: _refreshMortality,
           ),
         ],
@@ -195,12 +194,32 @@ class _WeeklyStatsSection extends StatelessWidget {
           );
         }
 
-        if (snapshot.hasError || (snapshot.data?.isEmpty ?? true)) {
+        if (snapshot.hasError) {
           return _ErrorBlock(
+            icon: Icons.cloud_off,
             message: snapshot.error is DengueApiException
                 ? (snapshot.error as DengueApiException).message
-                : 'No recent weekly data available for this filter.',
+                : 'Unable to reach the WHO data service.',
             onRetry: onRefresh,
+            retryLabel: 'Retry',
+          );
+        }
+
+        if (snapshot.data?.isEmpty ?? true) {
+          // Not every WHO member state has weekly ARBOV surveillance
+          // published — confirmed by querying the live endpoint directly:
+          // this table simply has zero Philippines rows, while the annual
+          // mortality endpoint below does have real PHL data. Retrying
+          // won't change that, so say so plainly instead of implying a
+          // fixable error, and point at the section that does have data.
+          return _ErrorBlock(
+            icon: Icons.info_outline,
+            message:
+                'WHO hasn\'t published weekly surveillance figures for '
+                '$countryLabel in this dataset. The long-term annual trend '
+                'below still reflects real WHO data for this country.',
+            onRetry: onRefresh,
+            retryLabel: 'Check again',
           );
         }
 
@@ -323,11 +342,13 @@ class _WeeklyStatsSection extends StatelessWidget {
 
 class _MortalityTrendSection extends StatelessWidget {
   final Future<List<DengueMortalityPoint>> future;
+  final String countryLabel;
   final VoidCallback onRefresh;
 
   const _MortalityTrendSection({
     super.key,
     required this.future,
+    required this.countryLabel,
     required this.onRefresh,
   });
 
@@ -349,12 +370,24 @@ class _MortalityTrendSection extends StatelessWidget {
           );
         }
 
-        if (snapshot.hasError || (snapshot.data?.isEmpty ?? true)) {
+        if (snapshot.hasError) {
           return _ErrorBlock(
+            icon: Icons.cloud_off,
             message: snapshot.error is DengueApiException
                 ? (snapshot.error as DengueApiException).message
-                : 'No mortality trend data available for this filter.',
+                : 'Unable to reach the WHO data service.',
             onRetry: onRefresh,
+          );
+        }
+
+        if (snapshot.data?.isEmpty ?? true) {
+          return _ErrorBlock(
+            icon: Icons.info_outline,
+            message:
+                'WHO hasn\'t published an annual mortality estimate for '
+                '$countryLabel yet.',
+            onRetry: onRefresh,
+            retryLabel: 'Check again',
           );
         }
 
@@ -435,28 +468,39 @@ class _MortalityTrendSection extends StatelessWidget {
 class _ErrorBlock extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
+  final IconData icon;
+  final String retryLabel;
 
-  const _ErrorBlock({required this.message, required this.onRetry});
+  const _ErrorBlock({
+    required this.message,
+    required this.onRetry,
+    this.icon = Icons.cloud_off,
+    this.retryLabel = 'Retry',
+  });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 80,
+    // No fixed height here on purpose: the old SizedBox(height: 80) forced a
+    // box shorter than its own content once the app-wide 44px minimum
+    // TextButton tap target is accounted for, which overflowed by ~15px on
+    // every screen that renders this (both dashboards embed DengueStatsCard).
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.cloud_off, color: AppColors.textMuted, size: 20),
+          Icon(icon, color: AppColors.textMuted, size: 20),
           const SizedBox(height: 6),
           Text(
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           TextButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('Retry'),
+            label: Text(retryLabel),
           ),
         ],
       ),

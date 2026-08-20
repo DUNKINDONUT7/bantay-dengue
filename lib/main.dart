@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/supabase_config.dart';
 import 'navigation/app_router.dart';
 import 'services/auth_service.dart';
-import 'services/theme_controller.dart';
 import 'theme/app_theme.dart';
 import 'widgets/entry_sync_view.dart';
 
@@ -58,7 +57,7 @@ class _BantayDengueBootstrapState extends State<BantayDengueBootstrap> {
     return MaterialApp(
       title: 'BantayDengue',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.theme,
       home: Scaffold(
         body: _startupError == null
             ? const EntrySyncView(
@@ -138,18 +137,11 @@ class _BantayDengueAppState extends State<BantayDengueApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeController,
-      builder: (context, mode, _) {
-        return MaterialApp.router(
-          title: 'BantayDengue',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: mode,
-          routerConfig: _router,
-        );
-      },
+    return MaterialApp.router(
+      title: 'BantayDengue',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.theme,
+      routerConfig: _router,
     );
   }
 }

@@ -14,7 +14,6 @@ dependencies:
   go_router: ^13.0.0
 
   # UI & Fonts
-  cupertino_icons: ^1.0.6
   google_fonts: ^6.1.0
   flutter_svg: ^2.0.9
 
@@ -32,23 +31,21 @@ dependencies:
   # by heart, and hand-typed numbers are an easy source of wrong pins.
   geolocator: ^13.0.2
 
-  # Date & Calendar
-  intl: ^0.19.0
-  table_calendar: ^3.1.0
-
-  # Local Storage (Phase 2 addition)
-  shared_preferences: ^2.2.2
-
   # HTTP & API (Phase 2 addition — for AI Assistant)
   http: ^1.2.0
 
   # Backend (Phase 3 — Supabase migration)
   supabase_flutter: ^2.5.0
 
+  # Not imported directly in lib/, but supabase_flutter uses it internally
+  # (SharedPreferencesGotrueAsyncStorage) for local session persistence, and
+  # the test suite needs it as a direct dependency to mock that storage.
+  shared_preferences: ^2.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true

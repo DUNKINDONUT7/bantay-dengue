@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/entry_sync_view.dart';
+import '../widgets/mosquito_hero.dart';
 
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
@@ -33,51 +34,54 @@ class SplashScreen extends StatelessWidget {
           const Positioned.fill(child: _AnimatedLandingBackground()),
           SafeArea(
             child: LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 860;
-            return SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(
-                constraints.maxWidth < 400 ? 16 : 24,
-                18,
-                constraints.maxWidth < 400 ? 16 : 24,
-                28,
-              ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1120),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _LandingHeader(wide: wide),
-                      SizedBox(height: wide ? 76 : 52),
-                      if (wide)
-                        const Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(flex: 11, child: _HeroCopy(wide: true)),
-                            SizedBox(width: 64),
-                            Expanded(flex: 9, child: _ResponsePreview()),
-                          ],
-                        )
-                      else
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _HeroCopy(wide: false),
-                            SizedBox(height: 36),
-                            _ResponsePreview(),
-                          ],
-                        ),
-                      SizedBox(height: wide ? 80 : 48),
-                      const _CapabilityStrip(),
-                    ],
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 860;
+                return SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    constraints.maxWidth < 400 ? 16 : 24,
+                    18,
+                    constraints.maxWidth < 400 ? 16 : 24,
+                    28,
                   ),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1120),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const _LandingHeader(),
+                          SizedBox(height: wide ? 64 : 40),
+                          if (wide)
+                            const Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(flex: 11, child: _HeroCopy(wide: true)),
+                                SizedBox(width: 48),
+                                Expanded(
+                                  flex: 9,
+                                  child: Center(child: MosquitoHero(size: 260)),
+                                ),
+                              ],
+                            )
+                          else
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Center(child: MosquitoHero(size: 190)),
+                                SizedBox(height: 12),
+                                _HeroCopy(wide: false),
+                              ],
+                            ),
+                          SizedBox(height: wide ? 64 : 40),
+                          const _CapabilityStrip(),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -85,9 +89,7 @@ class SplashScreen extends StatelessWidget {
 }
 
 class _LandingHeader extends StatelessWidget {
-  final bool wide;
-
-  const _LandingHeader({required this.wide});
+  const _LandingHeader();
 
   @override
   Widget build(BuildContext context) {
@@ -100,13 +102,7 @@ class _LandingHeader extends StatelessWidget {
             color: AppColors.primary,
             borderRadius: BorderRadius.circular(11),
           ),
-          child: const Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(Icons.shield, color: AppColors.onPrimary, size: 25),
-              Icon(Icons.pest_control, color: AppColors.primary, size: 11),
-            ],
-          ),
+          child: const Icon(Icons.shield, color: AppColors.onPrimary, size: 22),
         ),
         const SizedBox(width: 11),
         const Expanded(
@@ -120,15 +116,9 @@ class _LandingHeader extends StatelessWidget {
             ),
           ),
         ),
-        if (wide) ...[
-          const _HeaderTag(icon: Icons.shield_outlined, text: 'Role protected'),
-          const SizedBox(width: 9),
-          const _HeaderTag(icon: Icons.phone_iphone, text: 'Mobile first'),
-          const SizedBox(width: 16),
-        ],
         OutlinedButton(
           onPressed: () => context.go('/login'),
-          child: Text(wide ? 'Sign in' : 'Login'),
+          child: const Text('Sign in'),
         ),
       ],
     );
@@ -163,21 +153,38 @@ class _HeroCopy extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        Text(
-          'Report sooner.\nRespond smarter.',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: wide ? 55 : 40,
-            height: 0.98,
-            letterSpacing: wide ? -2.2 : -1.5,
-            fontWeight: FontWeight.w700,
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: 'Report sooner.\n',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: wide ? 58 : 42,
+                  height: 0.98,
+                  letterSpacing: wide ? -2.4 : -1.6,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              TextSpan(
+                text: 'Respond smarter.',
+                style: TextStyle(
+                  color: AppColors.danger,
+                  fontStyle: FontStyle.italic,
+                  fontSize: wide ? 58 : 42,
+                  height: 0.98,
+                  letterSpacing: wide ? -2.4 : -1.6,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 20),
         ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 570),
+          constraints: const BoxConstraints(maxWidth: 500),
           child: Text(
-            'A secure, role-based dengue surveillance app that connects residents, barangay health workers, waste personnel, and administrators in one coordinated system.',
+            'A secure, role-based dengue surveillance app connecting residents, barangay health workers, waste personnel, and administrators in one coordinated system.',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               color: AppColors.textSecondary,
               fontSize: wide ? 17 : 15.5,
@@ -189,25 +196,25 @@ class _HeroCopy extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             final stack = constraints.maxWidth < 390;
-            final create = FilledButton.icon(
-              onPressed: () => context.go('/signup'),
+            final getStarted = FilledButton.icon(
+              onPressed: () => _openRolePicker(context),
               icon: const Icon(Icons.arrow_forward, size: 18),
-              label: const Text('Create resident account'),
+              label: const Text('Get started'),
             );
             final signIn = OutlinedButton(
               onPressed: () => context.go('/login'),
-              child: const Text('Open my workspace'),
+              child: const Text('Sign in'),
             );
             if (stack) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [create, const SizedBox(height: 10), signIn],
+                children: [getStarted, const SizedBox(height: 10), signIn],
               );
             }
             return Wrap(
               spacing: 10,
               runSpacing: 10,
-              children: [create, signIn],
+              children: [getStarted, signIn],
             );
           },
         ),
@@ -233,150 +240,174 @@ class _HeroCopy extends StatelessWidget {
   }
 }
 
-class _ResponsePreview extends StatelessWidget {
-  const _ResponsePreview();
+/// One modal for every screen size: a role picker is a short, occasional
+/// decision, not something that deserves permanent hero real estate. Reuses
+/// the app's existing showModalBottomSheet convention (see
+/// notifications_panel.dart / main_shell.dart's "More" sheet).
+Future<void> _openRolePicker(BuildContext context) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (sheetContext) => ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Choose your workspace',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              "One secure sign-in — pick where you're headed.",
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 18),
+            _RoleRow(
+              icon: Icons.home_outlined,
+              title: 'Resident',
+              detail: 'Reports, appointments, and waste requests',
+              cta: 'Create account',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.go('/signup');
+              },
+            ),
+            const SizedBox(height: 8),
+            _RoleRow(
+              icon: Icons.health_and_safety_outlined,
+              title: 'Health Center',
+              detail: 'Verification and clinical coordination',
+              cta: 'Sign in',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.go('/login');
+              },
+            ),
+            const SizedBox(height: 8),
+            _RoleRow(
+              icon: Icons.delete_sweep_outlined,
+              title: 'Waste Personnel',
+              detail: 'Collection operations dashboard',
+              cta: 'Sign in',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.go('/login');
+              },
+            ),
+            const SizedBox(height: 8),
+            _RoleRow(
+              icon: Icons.admin_panel_settings_outlined,
+              title: 'Administrator',
+              detail: 'Users, access, analytics, and advisories',
+              cta: 'Sign in',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                context.go('/login');
+              },
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'New accounts start as Residents. Health Worker, Waste Personnel, '
+              'and Administrator access is assigned separately by an administrator.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11.5, height: 1.4),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _RoleRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String detail;
+  final String cta;
+  final VoidCallback onTap;
+
+  const _RoleRow({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    required this.cta,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceCard,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
-                  Icons.grid_view_rounded,
-                  color: AppColors.onPrimary,
-                  size: 18,
-                ),
+                child: Icon(icon, size: 18),
               ),
-              const SizedBox(width: 11),
-              const Expanded(
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Community response',
-                      style: TextStyle(
+                      title,
+                      style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
-                      'Role-specific workspaces',
-                      style: TextStyle(
+                      detail,
+                      style: const TextStyle(
                         color: AppColors.textMuted,
-                        fontSize: 11.5,
+                        fontSize: 11,
                       ),
                     ),
                   ],
                 ),
               ),
-              Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: AppColors.success,
-                  shape: BoxShape.circle,
-                ),
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    cta,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 16),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          const _WorkspaceRow(
-            icon: Icons.home_outlined,
-            title: 'Resident',
-            detail: 'Reports, appointments, and waste requests',
-          ),
-          const SizedBox(height: 8),
-          const _WorkspaceRow(
-            icon: Icons.health_and_safety_outlined,
-            title: 'Health Center',
-            detail: 'Verification and clinical coordination',
-          ),
-          const SizedBox(height: 8),
-          const _WorkspaceRow(
-            icon: Icons.delete_sweep_outlined,
-            title: 'Waste Personnel',
-            detail: 'Separate collection operations dashboard',
-          ),
-          const SizedBox(height: 8),
-          const _WorkspaceRow(
-            icon: Icons.admin_panel_settings_outlined,
-            title: 'Administrator',
-            detail: 'Users, access, analytics, and advisories',
-          ),
-        ],
+        ),
       ),
     );
   }
 }
-
-class _WorkspaceRow extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String detail;
-
-  const _WorkspaceRow({
-    required this.icon,
-    required this.title,
-    required this.detail,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  detail,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 10.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 
 class _CapabilityStrip extends StatelessWidget {
   const _CapabilityStrip();
@@ -395,15 +426,9 @@ class _CapabilityStrip extends StatelessWidget {
         spacing: 22,
         runSpacing: 12,
         children: [
-          _Capability(
-            icon: Icons.fact_check_outlined,
-            text: 'Verified workflows',
-          ),
+          _Capability(icon: Icons.fact_check_outlined, text: 'Verified workflows'),
           _Capability(icon: Icons.map_outlined, text: 'OpenStreetMap hotspots'),
-          _Capability(
-            icon: Icons.notifications_none,
-            text: 'Status notifications',
-          ),
+          _Capability(icon: Icons.notifications_none, text: 'Status notifications'),
           _Capability(icon: Icons.shield_outlined, text: 'Supabase RLS'),
         ],
       ),
@@ -437,37 +462,11 @@ class _Capability extends StatelessWidget {
   }
 }
 
-class _HeaderTag extends StatelessWidget {
-  final IconData icon;
-  final String text;
-
-  const _HeaderTag({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14),
-        const SizedBox(width: 6),
-        Text(
-          text,
-          style: const TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 11.5,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// Slow, looping soft-glow background for the landing page. Pure Flutter
 /// (a few radial gradients drifting on sine curves), no video/image asset —
 /// keeps the landing page lightweight and avoids an extra network fetch on
 /// first load, while still giving the page some life instead of a flat
-/// black background.
+/// background.
 class _AnimatedLandingBackground extends StatefulWidget {
   const _AnimatedLandingBackground();
 
@@ -503,7 +502,7 @@ class _AnimatedLandingBackgroundState
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
-            final t = _controller.value * 2 * 3.14159265;
+            final t = _controller.value * 2 * math.pi;
             return Stack(
               children: [
                 _blob(

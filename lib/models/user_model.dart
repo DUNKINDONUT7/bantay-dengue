@@ -58,6 +58,7 @@ class UserModel {
   final String? barangay;
   final String? photoUrl;
   final bool isActive;
+  final DateTime? createdAt;
 
   const UserModel({
     required this.id,
@@ -68,6 +69,7 @@ class UserModel {
     this.barangay,
     this.photoUrl,
     this.isActive = true,
+    this.createdAt,
   });
 
   String get roleLabel {
@@ -95,6 +97,7 @@ class UserModel {
       // The existing live table does not have this column yet; absence means
       // active so the migration is backward compatible.
       isActive: row['is_active'] as bool? ?? true,
+      createdAt: DateTime.tryParse('${row['created_at']}'),
     );
   }
 }

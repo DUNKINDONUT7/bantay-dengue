@@ -1,9 +1,7 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../services/database_service.dart';
-import '../../services/image_picker_stub.dart';
 import '../../utils/ui_helpers.dart';
 import '../../widgets/section_header.dart';
 
@@ -40,119 +38,17 @@ class _WasteCollectionScreenState extends State<WasteCollectionScreen> {
   }
 
   Future<void> _request() async {
-    final description = TextEditingController();
-    final location = TextEditingController();
-    DateTime preferredDate = DateTime.now().add(const Duration(days: 1));
-    Uint8List? photo;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Request waste collection'),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: location,
-                    decoration: const InputDecoration(
-                      labelText: 'Pickup location or landmark',
-                      prefixIcon: Icon(Icons.location_on_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: description,
-                    minLines: 3,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      labelText: 'Waste details',
-                      alignLabelWithHint: true,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final result = await pickEvidenceImage(context);
-                      if (result != null) setDialogState(() => photo = result);
-                    },
-                    icon: Icon(
-                      photo == null
-                          ? Icons.add_a_photo_outlined
-                          : Icons.check_circle,
-                    ),
-                    label: Text(
-                      photo == null ? 'Add private evidence' : 'Photo ready',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final date = await showDatePicker(
-                        context: context,
-                        initialDate: preferredDate,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 60)),
-                      );
-                      if (date != null) {
-                        setDialogState(() => preferredDate = date);
-                      }
-                    },
-                    icon: const Icon(Icons.event_outlined),
-                    label: Text(
-                      'Preferred: ${formatDateTime(preferredDate).split(' ·').first}',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Submit'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true) {
-      description.dispose();
-      location.dispose();
-      return;
-    }
-    if (location.text.trim().length < 3 || description.text.trim().length < 5) {
-      if (mounted) {
-        showMessage(
-          context,
-          'Enter a pickup location and waste details.',
-          error: true,
-        );
-      }
-      description.dispose();
-      location.dispose();
-      return;
-    }
+    final submitted = await context.push<bool>('/civilian/waste/new');
+    if (submitted == true) _load();
+  }
+
+  Future<void> _cancel(String id) async {
     try {
-      await DatabaseService.instance.createWasteRequest(
-        description: description.text.trim(),
-        locationText: location.text.trim(),
-        preferredDate: preferredDate,
-        photoBytes: photo,
-      );
-      if (mounted) showMessage(context, 'Waste collection request submitted.');
+      await DatabaseService.instance.updateWasteStatus(id, 'cancelled');
+      if (mounted) showMessage(context, 'Request cancelled.');
       await _load();
     } catch (error) {
       if (mounted) showMessage(context, errorMessage(error), error: true);
-    } finally {
-      description.dispose();
-      location.dispose();
     }
   }
 
@@ -175,6 +71,7 @@ class _WasteCollectionScreenState extends State<WasteCollectionScreen> {
               action: IconButton(
                 onPressed: _load,
                 icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
               ),
             ),
             Expanded(
@@ -194,6 +91,7 @@ class _WasteCollectionScreenState extends State<WasteCollectionScreen> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final item = _items[index];
+                      final canCancel = item['status'] == 'pending';
                       return Card(
                         child: ListTile(
                           leading: const CircleAvatar(
@@ -208,8 +106,17 @@ class _WasteCollectionScreenState extends State<WasteCollectionScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           isThreeLine: true,
-                          trailing: StatusChip(
-                            '${item['status'] ?? 'pending'}',
+                          trailing: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              StatusChip('${item['status'] ?? 'pending'}'),
+                              if (canCancel)
+                                IconButton(
+                                  onPressed: () => _cancel('${item['id']}'),
+                                  icon: const Icon(Icons.cancel_outlined),
+                                  tooltip: 'Cancel request',
+                                ),
+                            ],
                           ),
                         ),
                       );

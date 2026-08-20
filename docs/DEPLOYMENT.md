@@ -29,50 +29,20 @@ The application retains the original repository's public project URL and anon ke
 
 ## 3. Review and apply the database migration
 
-Database SQL is privileged and is never executed by the app. For a complete install/repair, review:
+Database SQL is privileged and is never executed by the app, and this project does **not** use `supabase db push` / CLI-tracked migrations — every change so far has been applied by hand in Supabase Studio's SQL Editor. **`supabase/README.md` is the authoritative index**: it lists every SQL file, whether it's already applied to the live project, and the exact order to run what's still pending. Read that file before touching anything in `supabase/` — do not assume a file is safe to run (or re-run) from its name alone; some files are one-time-only and destructive on a second run (they say so at the top).
 
-`supabase/BantayDengue_Full_Database_v2.3.sql`
+For a **fresh, blank** project only, `supabase/BantayDengue_Full_Database_v2.3.sql` is a single-file alternative to the incremental path — see `supabase/README.md` for details.
 
-For migration-managed projects, apply in order:
-
-1. `supabase/migrations/202608110001_existing_system_integration.sql`
-2. `supabase/migrations/202608110002_waste_personnel_canonical_role.sql` (required for a project that already recorded the v2.2 migration)
-
-The additive path expects the original `supabase/schema.sql` tables to exist. The complete script can bootstrap blank projects and can repair the supplied canonical enum-role baseline. The SQL:
-
-- adds `profiles.is_active` and the canonical `waste_personnel` role policy set;
-- adds waste evidence/assignment columns;
-- creates `status_history`;
-- replaces relevant operational RLS policies;
-- guards role/access fields against self-promotion;
-- limits resident appointment updates to valid cancellation;
-- validates report, appointment, and waste status transitions;
-- captures status history, user notifications, and audit events;
-- creates private `report-evidence` and `waste-evidence` buckets with owner/staff policies.
-
-### Option A — Supabase CLI
-
-From the repository root, link only to a staging project first:
-
-```bash
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-supabase db push --dry-run
-supabase db push
-```
-
-Inspect the dry-run output before executing `db push`. CLI flags can vary by version; use `supabase db push --help` if needed.
-
-### Option B — Dashboard SQL Editor
+### Applying a pending file
 
 1. Open the intended project in Supabase Dashboard.
 2. Create a database backup.
-3. Open SQL Editor and paste either the complete v2.3 script or the next migration required by the target environment.
-4. Review the project name and current schema before running.
-5. Execute once as an authorized owner.
-6. If any statement fails, the surrounding transaction rolls back; investigate rather than removing safeguards.
+3. Open SQL Editor, paste the exact file `supabase/README.md` says is next, and confirm the project name before running.
+4. Execute once as an authorized owner.
+5. If any statement fails, the surrounding transaction rolls back; investigate rather than removing safeguards.
+6. Update the status table in `supabase/README.md` once it succeeds.
 
-The migration is designed to be rerunnable through `IF NOT EXISTS`, `CREATE OR REPLACE`, and explicit policy/trigger replacement. Do not deploy it blindly to an unrelated schema.
+Do not run `supabase db push` against this project — `supabase/_archive/` holds SQL that was never applied and is not compatible with the live schema; pushing would try to apply it.
 
 ## 4. Verify backend behavior
 

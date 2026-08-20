@@ -1,9 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../utils/ui_helpers.dart';
+import '../widgets/notifications_panel.dart';
 import '../widgets/section_header.dart';
 
 /// Dedicated account workspace for the waste-personnel role.
@@ -36,7 +39,7 @@ class _WastePersonnelAccountScreenState
       builder: (context) => AlertDialog(
         title: const Text('Edit personnel account'),
         content: SizedBox(
-          width: 440,
+          width: min(440, MediaQuery.sizeOf(context).width - 48),
           child: Form(
             key: formKey,
             child: SingleChildScrollView(
@@ -275,9 +278,7 @@ class _WastePersonnelAccountScreenState
                                       'Review collection and system updates.',
                                     ),
                                     trailing: const Icon(Icons.chevron_right),
-                                    onTap: () => context.go(
-                                      '/waste-management/notifications',
-                                    ),
+                                    onTap: () => openNotificationsPanel(context),
                                   ),
                                   const Divider(),
                                   const ListTile(

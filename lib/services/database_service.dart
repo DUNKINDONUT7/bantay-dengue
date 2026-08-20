@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
@@ -38,27 +37,24 @@ class DatabaseService {
 
   Future<List<Map<String, dynamic>>> fetchReports({
     bool ownOnly = false,
+    String? reportType,
   }) async {
     try {
       const columns =
           'id, reporter_id, report_type, description, photo_url, latitude, '
           'longitude, location_text, status, reviewed_by, created_at, updated_at, '
           'profiles!reports_reporter_id_fkey(full_name, email)';
-      final dynamic result;
+      dynamic request = _client
+          .from('reports')
+          .select(columns)
+          .isFilter('deleted_at', null);
       if (ownOnly) {
-        result = await _client
-            .from('reports')
-            .select(columns)
-            .eq('reporter_id', _userId)
-            .isFilter('deleted_at', null)
-            .order('created_at', ascending: false);
-      } else {
-        result = await _client
-            .from('reports')
-            .select(columns)
-            .isFilter('deleted_at', null)
-            .order('created_at', ascending: false);
+        request = request.eq('reporter_id', _userId);
       }
+      if (reportType != null) {
+        request = request.eq('report_type', reportType);
+      }
+      final result = await request.order('created_at', ascending: false);
       return _rows(result);
     } catch (error) {
       throw DataServiceException.from(
@@ -77,6 +73,16 @@ class DatabaseService {
     Uint8List? photoBytes,
   }) async {
     try {
+      if (type == 'breeding_site') {
+        return await _submitBreedingSiteReport(
+          description: description,
+          locationText: locationText,
+          latitude: latitude,
+          longitude: longitude,
+          photoBytes: photoBytes,
+        );
+      }
+
       String? photoPath;
       if (photoBytes != null) {
         photoPath = await uploadPrivateImage(
@@ -106,6 +112,81 @@ class DatabaseService {
         error,
         fallback: 'Unable to submit the report.',
       );
+    }
+  }
+
+  Future<Map<String, dynamic>> _submitBreedingSiteReport({
+    required String description,
+    required String locationText,
+    double? latitude,
+    double? longitude,
+    Uint8List? photoBytes,
+  }) async {
+    String? photoPath;
+    if (photoBytes != null) {
+      photoPath = await uploadPrivateImage(
+        bucket: 'waste-evidence',
+        folder: 'breeding-sites',
+        bytes: photoBytes,
+      );
+    }
+
+    final values = <String, dynamic>{
+      'requester_id': _userId,
+      'description': 'Mosquito breeding site report\n\n$description',
+      'latitude': latitude,
+      'longitude': longitude,
+      'location_text': locationText,
+      'status': 'pending',
+    };
+    if (photoPath != null) values['photo_url'] = photoPath;
+
+    try {
+      final dynamic row = await _client
+          .from('waste_requests')
+          .insert(values)
+          .select()
+          .single();
+      return Map<String, dynamic>.from(row as Map);
+    } on PostgrestException catch (error) {
+      final missingPhotoColumn =
+          error.code == '42703' ||
+          error.code == 'PGRST204' ||
+          error.message.contains('photo_url');
+      if (!missingPhotoColumn) rethrow;
+      values.remove('photo_url');
+      final dynamic row = await _client
+          .from('waste_requests')
+          .insert(values)
+          .select()
+          .single();
+      return Map<String, dynamic>.from(row as Map);
+    }
+  }
+
+  /// Whether another report of this type already exists near this spot
+  /// recently. Backed by a SECURITY DEFINER Postgres function that returns
+  /// only a boolean — never another resident's report details — so this is
+  /// safe to call as a resident without punching a hole in report privacy
+  /// (see nearby_report_exists in supabase/BantayDengue_FINAL.sql).
+  /// Best-effort: a failed/unmigrated check never blocks report submission.
+  Future<bool> nearbyReportExists({
+    required String reportType,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final result = await _client.rpc(
+        'nearby_report_exists',
+        params: {
+          'p_report_type': reportType,
+          'p_latitude': latitude,
+          'p_longitude': longitude,
+        },
+      );
+      return result as bool? ?? false;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -170,7 +251,8 @@ class DatabaseService {
     } catch (error) {
       throw DataServiceException.from(
         error,
-        fallback: 'Unable to update the report. Only pending reports you '
+        fallback:
+            'Unable to update the report. Only pending reports you '
             'filed yourself can be edited.',
       );
     }
@@ -197,7 +279,8 @@ class DatabaseService {
     } catch (error) {
       throw DataServiceException.from(
         error,
-        fallback: 'Unable to delete the report. Only pending reports you '
+        fallback:
+            'Unable to delete the report. Only pending reports you '
             'filed yourself can be deleted.',
       );
     }
@@ -410,6 +493,7 @@ class DatabaseService {
   }) async {
     try {
       final values = <String, dynamic>{
+        'name': barangay,
         'barangay': barangay,
         'risk_level': riskLevel,
         'case_count': caseCount,
@@ -460,6 +544,42 @@ class DatabaseService {
       throw DataServiceException.from(
         error,
         fallback: 'Unable to publish the advisory.',
+      );
+    }
+  }
+
+  // ── Announcements ────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> fetchAnnouncements() async {
+    try {
+      final result = await _client
+          .from('announcements')
+          .select()
+          .order('created_at', ascending: false);
+      return _rows(result);
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to load announcements.',
+      );
+    }
+  }
+
+  Future<void> publishAnnouncement({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      await _client.from('announcements').insert({
+        'author_id': _userId,
+        'title': title,
+        'body': body,
+      });
+      await logActivity('announcement_published', {'title': title});
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to publish the announcement.',
       );
     }
   }
@@ -544,6 +664,37 @@ class DatabaseService {
     }
   }
 
+  /// Uploads [bytes] to the public `avatars` bucket (see
+  /// supabase/AVATAR_STORAGE.sql) and saves the resulting path as the
+  /// caller's profile photo.
+  Future<void> updateProfilePhoto(Uint8List bytes) async {
+    final path = await uploadPrivateImage(
+      bucket: 'avatars',
+      folder: 'avatar',
+      bytes: bytes,
+    );
+    try {
+      await _client
+          .from('profiles')
+          .update({
+            'photo_url': path,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', _userId);
+      await authService.refreshProfile();
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to save your profile photo.',
+      );
+    }
+  }
+
+  /// The `avatars` bucket is public, so its URL is a stable direct link —
+  /// no signing/expiry to manage, unlike the private evidence buckets.
+  String avatarPublicUrl(String path) =>
+      _client.storage.from('avatars').getPublicUrl(path);
+
   Future<void> updateUserRole(String userId, String role) async {
     try {
       await _client.from('profiles').update({'role': role}).eq('id', userId);
@@ -598,9 +749,12 @@ class DatabaseService {
         'action': action,
         'details': details,
       });
-    } catch (_) {
+    } catch (error) {
       // Audit insertion is best-effort from the client. Authoritative workflow
-      // audit triggers are also supplied in the integration migration.
+      // audit triggers are also supplied in the integration migration. Still
+      // surface the failure in debug console so a broken audit trail isn't
+      // silently invisible during development.
+      debugPrint('logActivity($action) failed: $error');
     }
   }
 
@@ -611,7 +765,8 @@ class DatabaseService {
     if (path == null || path.isEmpty) return null;
     try {
       return await _client.storage.from(bucket).createSignedUrl(path, 300);
-    } catch (_) {
+    } catch (error) {
+      debugPrint('createEvidenceUrl($bucket, $path) failed: $error');
       return null;
     }
   }

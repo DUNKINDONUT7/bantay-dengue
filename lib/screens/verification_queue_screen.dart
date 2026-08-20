@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../services/database_service.dart';
@@ -30,6 +32,8 @@ class _VerificationQueueScreenState extends State<VerificationQueueScreen> {
       _error = null;
     });
     try {
+      // Both report types need staff review — dengue_case and breeding_site
+      // are equally part of the verification workflow.
       _reports = await DatabaseService.instance.fetchReports();
     } catch (error) {
       _error = error;
@@ -69,7 +73,7 @@ class _VerificationQueueScreenState extends State<VerificationQueueScreen> {
         return AlertDialog(
           title: Text(humanize(report['report_type'] as String?)),
           content: SizedBox(
-            width: 560,
+            width: min(560, MediaQuery.sizeOf(context).width - 48),
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,6 +157,7 @@ class _VerificationQueueScreenState extends State<VerificationQueueScreen> {
               action: IconButton(
                 onPressed: _load,
                 icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
               ),
             ),
             SizedBox(

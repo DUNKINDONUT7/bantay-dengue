@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../models/user_model.dart';
@@ -49,7 +51,7 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Publish health advisory'),
         content: SizedBox(
-          width: 500,
+          width: min(500, MediaQuery.sizeOf(context).width - 48),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -122,6 +124,7 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
               action: IconButton(
                 onPressed: _load,
                 icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
               ),
             ),
             Expanded(

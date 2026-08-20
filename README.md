@@ -57,20 +57,9 @@ A full-screen account-sync state is intentionally limited to app startup, sessio
 
 ## Backend integration is required
 
-The UI is compatible with the original schema, but all added workflows require the additive migration and Edge Functions:
+The database is never auto-migrated by the Flutter client — every schema change is reviewed and run by hand in Supabase Studio's SQL Editor by an authorized project owner. **`supabase/README.md` is the single source of truth for what's already applied to the live project, what's still pending, and the exact order to run things in** — check that file before running or writing any SQL against this project, rather than guessing from file names.
 
-- Base schema: `supabase/schema.sql`
-- Complete install/repair SQL: `supabase/BantayDengue_Full_Database_v2.3.sql`
-- Additive migrations: `supabase/migrations/202608110001_existing_system_integration.sql` and `202608110002_waste_personnel_canonical_role.sql`
-- Edge Functions: `supabase/functions/assistant-guidance` and `supabase/functions/weather-risk`
-
-The SQL uses the canonical `waste_personnel` role (while the client can read legacy role aliases), adds suspension enforcement, workflow guards/history, notifications/auditing, waste evidence and assignment metadata, and private evidence buckets/policies. It is intentionally **not auto-applied** by the client. Review and deploy it from an authorized Supabase owner account by following [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
-
-Until that migration is deployed:
-
-- the existing resident, health-worker, and administrator login/data flows remain available;
-- assigning `waste_personnel`, account suspension, private evidence buckets, assignment ownership, and authoritative status-history triggers are unavailable;
-- waste-list loading automatically falls back to the original column set.
+Edge Functions: `supabase/functions/assistant-guidance` and `supabase/functions/weather-risk`.
 
 ## Validation performed
 
@@ -93,8 +82,7 @@ Android compilation was not run in the supplied workspace because Android Studio
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — migration, Edge Function, Web, Android, and iOS deployment checklist
 - `lib/services/database_service.dart` — authenticated Supabase operational gateway
 - `lib/navigation/app_router.dart` — session and role fences
-- `supabase/BantayDengue_Full_Database_v2.3.sql` — complete owner-reviewed install/repair script
-- `supabase/migrations/` — additive and deployed-v2.2 follow-up migrations
+- `supabase/README.md` — what's live, what's pending, and the exact run order for every SQL file in `supabase/`
 
 ## Map usage
 

@@ -4,8 +4,11 @@ import 'package:go_router/go_router.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../services/weather_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
+import '../widgets/analytics_widgets.dart';
 import '../widgets/dengue_stats_card.dart';
+import '../widgets/notifications_panel.dart';
 import '../widgets/section_header.dart';
 import '../widgets/shared_widgets.dart';
 
@@ -82,16 +85,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               SectionHeader(
                 title: 'Good day, $name',
                 subtitle: 'Your authenticated community dengue dashboard.',
-                action: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const DemoAccessButton(),
-                    IconButton(
-                      onPressed: () => context.go('/civilian/notifications'),
-                      icon: const Icon(Icons.notifications_outlined),
-                      tooltip: 'Notifications',
-                    ),
-                  ],
+                action: IconButton(
+                  onPressed: () => openNotificationsPanel(context),
+                  icon: const Icon(Icons.notifications_outlined),
+                  tooltip: 'Notifications',
                 ),
               ),
               if (_loading) const LinearProgressIndicator(),
@@ -129,16 +126,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
               if (_weather != null)
-                Card(
-                  margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      child: Icon(Icons.water_drop_outlined),
-                    ),
-                    title: Text(
-                      'Weather breeding conditions: ${_weather!.label}',
-                    ),
-                    subtitle: Text(_weather!.summary),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                  child: WeatherBreedingCard(
+                    label: _weather!.label,
+                    summary: _weather!.summary,
+                    dailyRainMm: _weather!.dailyRainMm,
                   ),
                 ),
               const SectionHeader(
@@ -149,31 +142,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final count = constraints.maxWidth >= 780 ? 3 : 1;
+                    final count = constraints.maxWidth >= 780 ? 3 : 2;
                     return GridView.count(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisCount: count,
                       mainAxisSpacing: 10,
                       crossAxisSpacing: 10,
-                      childAspectRatio: count == 1 ? 3.5 : 1.65,
+                      childAspectRatio: count == 3 ? 1.3 : 1.15,
                       children: [
-                        _Metric(
-                          title: 'Open reports',
-                          value: openReports,
+                        StatCard(
+                          value: '$openReports',
+                          label: 'Open reports',
                           icon: Icons.fact_check_outlined,
+                          color: AppColors.warning,
                           onTap: () => context.go('/civilian/report/history'),
                         ),
-                        _Metric(
-                          title: 'Appointments',
-                          value: upcoming,
+                        StatCard(
+                          value: '$upcoming',
+                          label: 'Appointments',
                           icon: Icons.event_outlined,
+                          color: AppColors.info,
                           onTap: () => context.go('/civilian/appointments'),
                         ),
-                        _Metric(
-                          title: 'Waste requests',
-                          value: waste,
+                        StatCard(
+                          value: '$waste',
+                          label: 'Waste requests',
                           icon: Icons.delete_sweep_outlined,
+                          color: AppColors.success,
                           onTap: () => context.go('/civilian/waste'),
                         ),
                       ],
@@ -185,28 +181,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: 10,
+                  runSpacing: 10,
                   children: [
-                    FilledButton.icon(
-                      onPressed: () => context.go('/civilian/report/case'),
-                      icon: const Icon(Icons.medical_information_outlined),
-                      label: const Text('Report case'),
+                    FlyActionButton(
+                      icon: Icons.medical_information_outlined,
+                      label: 'Report case',
+                      filled: true,
+                      onTap: () => context.go('/civilian/report/case'),
                     ),
-                    FilledButton.tonalIcon(
-                      onPressed: () => context.go('/civilian/report/breeding'),
-                      icon: const Icon(Icons.pest_control_outlined),
-                      label: const Text('Breeding site'),
+                    FlyActionButton(
+                      icon: Icons.pest_control_outlined,
+                      label: 'Breeding site',
+                      onTap: () => context.go('/civilian/report/breeding'),
                     ),
-                    FilledButton.tonalIcon(
-                      onPressed: () => context.go('/civilian/map'),
-                      icon: const Icon(Icons.map_outlined),
-                      label: const Text('Hotspot map'),
+                    FlyActionButton(
+                      icon: Icons.map_outlined,
+                      label: 'Hotspot map',
+                      onTap: () => context.go('/civilian/map'),
                     ),
-                    FilledButton.tonalIcon(
-                      onPressed: () => context.go('/civilian/assistant'),
-                      icon: const Icon(Icons.smart_toy_outlined),
-                      label: const Text('Health guidance'),
+                    FlyActionButton(
+                      icon: Icons.smart_toy_outlined,
+                      label: 'Health guidance',
+                      onTap: () => context.go('/civilian/assistant'),
                     ),
                   ],
                 ),
@@ -226,50 +223,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
-}
-
-class _Metric extends StatelessWidget {
-  final String title;
-  final int value;
-  final IconData icon;
-  final VoidCallback onTap;
-  const _Metric({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            CircleAvatar(child: Icon(icon)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$value',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(title),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
-      ),
-    ),
-  );
 }

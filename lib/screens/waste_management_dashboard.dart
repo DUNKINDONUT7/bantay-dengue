@@ -1,9 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
+import '../widgets/notifications_panel.dart';
 import '../widgets/section_header.dart';
 import '../widgets/shared_widgets.dart';
 
@@ -73,7 +76,7 @@ class _WasteManagementDashboardState extends State<WasteManagementDashboard> {
       builder: (context) => AlertDialog(
         title: const Text('Private request evidence'),
         content: SizedBox(
-          width: 560,
+          width: min(560, MediaQuery.sizeOf(context).width - 48),
           child: signedUrl == null
               ? Text(
                   path == null
@@ -153,7 +156,11 @@ class _WasteManagementDashboardState extends State<WasteManagementDashboard> {
               action: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const DemoAccessButton(),
+                  IconButton(
+                    onPressed: () => openNotificationsPanel(context),
+                    icon: const Icon(Icons.notifications_outlined),
+                    tooltip: 'Notifications',
+                  ),
                   IconButton(
                     onPressed: _loading ? null : _load,
                     tooltip: 'Refresh requests',
@@ -225,29 +232,34 @@ class _WasteManagementDashboardState extends State<WasteManagementDashboard> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final columns = constraints.maxWidth >= 700 ? 3 : 3;
+                  final columns = constraints.maxWidth >= 700
+                      ? 3
+                      : (constraints.maxWidth >= 430 ? 2 : 1);
                   return GridView.count(
                     crossAxisCount: columns,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     crossAxisSpacing: 8,
                     mainAxisSpacing: 8,
-                    childAspectRatio: constraints.maxWidth < 430 ? 1.05 : 1.7,
+                    childAspectRatio: constraints.maxWidth < 430 ? 1.1 : 1.3,
                     children: [
-                      _Metric(
+                      StatCard(
+                        value: '$pending',
                         label: 'Pending',
-                        value: pending,
                         icon: Icons.pending_actions_outlined,
+                        color: AppColors.warning,
                       ),
-                      _Metric(
+                      StatCard(
+                        value: '$scheduled',
                         label: 'Scheduled',
-                        value: scheduled,
                         icon: Icons.event_available_outlined,
+                        color: AppColors.info,
                       ),
-                      _Metric(
+                      StatCard(
+                        value: '$collected',
                         label: 'Collected',
-                        value: collected,
                         icon: Icons.task_alt_outlined,
+                        color: AppColors.success,
                       ),
                     ],
                   );
@@ -486,44 +498,6 @@ class _MetaChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(text, style: const TextStyle(fontSize: 10.5)),
         ],
-      ),
-    );
-  }
-}
-
-class _Metric extends StatelessWidget {
-  final String label;
-  final int value;
-  final IconData icon;
-
-  const _Metric({required this.label, required this.value, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 18),
-            const Spacer(),
-            Text(
-              '$value',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -1,0 +1,86 @@
+BantayDengue - API Integration Test Log
+Generated: 2026-08-19 02:03:30 UTC
+==========================================================
+
+----------------------------------------------------------
+TEST: WHO Dengue Surveillance (GET) - fetchRecentStats(PHL, 12 weeks)
+METHOD: GET
+URL: https://xmart-api-public.who.int/ARBOV/V_DENGUE_GLOBAL_VALIDATED_PUBLIC?%24filter=ISO3%20eq%20%27PHL%27&%24orderby=START_DATE%20desc&%24top=12&excludeSysColumns=0
+
+STATUS CODE: 200
+RESPONSE BODY (truncated to 600 chars):
+{"@odata.context":"https://xmart-api-public.who.int/ARBOV/$metadata#V_DENGUE_GLOBAL_VALIDATED_PUBLIC","value":[]}
+
+----------------------------------------------------------
+TEST: WHO Global Health Estimates (GET) - fetchMortalityTrend(PHL, 6 years)
+METHOD: GET
+URL: https://xmart-api-public.who.int/DEX_CMS/GHE_FULL_DD?%24filter=ISO3%20eq%20%27PHL%27&%24top=6
+
+STATUS CODE: 400
+RESPONSE BODY (truncated to 600 chars):
+{"error":{"code":"Microsoft.OData.ODataException","message":"Could not find a property named 'ISO3' on type 'DEX_CMS.GHE_FULL_DD'."}}
+
+----------------------------------------------------------
+TEST: Open-Meteo Weather Forecast (GET) - fetchRisk(14.75, 120.95)
+METHOD: GET
+URL: https://api.open-meteo.com/v1/forecast?latitude=14.75&longitude=120.95&daily=precipitation_sum,temperature_2m_max,temperature_2m_min&timezone=Asia/Manila&forecast_days=7
+
+STATUS CODE: 200
+RESPONSE BODY (truncated to 600 chars):
+{"latitude":14.727592,"longitude":120.976746,"generationtime_ms":0.048041343688964844,"utc_offset_seconds":28800,"timezone":"Asia/Manila","timezone_abbreviation":"GMT+8","elevation":2.0,"daily_units":{"time":"iso8601","precipitation_sum":"mm","temperature_2m_max":"°C","temperature_2m_min":"°C"},"daily":{"time":["2026-08-19","2026-08-20","2026-08-21","2026-08-22","2026-08-23","2026-08-24","2026-08-25"],"precipitation_sum":[21.90,6.40,8.80,2.70,10.50,12.30,12.30],"temperature_2m_max":[28.6,29.5,29.7,29.6,29.5,28.9,28.5],"temperature_2m_min":[25.7,26.1,26.8,26.7,26.1,25.3,25.7]}}
+
+----------------------------------------------------------
+TEST: Supabase PostgREST (GET) - health_advisories list
+METHOD: GET
+URL: https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/health_advisories?select=*&limit=5
+
+STATUS CODE: 200
+RESPONSE BODY (truncated to 600 chars):
+[]
+
+----------------------------------------------------------
+TEST: Supabase PostgREST (GET) - reports (no user session, RLS enforcement check)
+METHOD: GET
+URL: https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports?select=*&limit=5
+
+STATUS CODE: 200
+RESPONSE BODY (truncated to 600 chars):
+[]
+
+----------------------------------------------------------
+TEST: Supabase PostgREST (POST) - insert into reports without auth (expect RLS denial)
+METHOD: POST
+URL: https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports
+
+STATUS CODE: 400
+RESPONSE BODY (truncated to 600 chars):
+{"code":"PGRST204","details":null,"hint":null,"message":"Could not find the 'details' column of 'reports' in the schema cache"}
+
+----------------------------------------------------------
+TEST: Supabase Auth (GET) - auth service health/settings
+METHOD: GET
+URL: https://vyhypddwnsybquzhkcmx.supabase.co/auth/v1/settings
+
+STATUS CODE: 200
+RESPONSE BODY (truncated to 600 chars):
+{"external":{"anonymous_users":false,"apple":false,"azure":false,"bitbucket":false,"discord":false,"facebook":false,"snapchat":false,"figma":false,"fly":false,"github":false,"gitlab":false,"google":false,"keycloak":false,"kakao":false,"linkedin":false,"linkedin_oidc":false,"notion":false,"spotify":false,"slack":false,"slack_oidc":false,"workos":false,"twitch":false,"twitter":false,"email":true,"phone":false,"zoom":false},"disable_signup":false,"mailer_autoconfirm":true,"phone_autoconfirm":false,"sms_provider":"twilio","saml_enabled":false,"saml_private_key_next_configured":true,"passkeys_enabl
+
+==========================================================
+End of automated API test log.
+
+----------------------------------------------------------
+RETEST (corrected query): WHO Global Health Estimates (GET) - fetchMortalityTrend(PHL, 6 years)
+METHOD: GET
+URL: https://xmart-api-public.who.int/DEX_CMS/GHE_FULL_DD?%24filter=DIM_GHECAUSE_TITLE%20eq%20%27Dengue%27%20and%20DIM_COUNTRY_CODE%20eq%20%27PHL%27%20and%20DIM_SEX_CODE%20eq%20%27BTSX%27&%24orderby=DIM_YEAR_CODE%20desc&%24top=6
+STATUS CODE: 200
+RESPONSE BODY (truncated to 600 chars):
+{"@odata.context":"https://xmart-api-public.who.int/DEX_CMS/$metadata#GHE_FULL_DD","value":[{"DIM_COUNTRY_CODE":"PHL","DIM_YEAR_CODE":"2021","DIM_GHECAUSE_CODE":"300","DIM_GHECAUSE_TITLE":"Dengue","DIM_AGEGROUP_CODE":"ALLAges","DIM_SEX_CODE":"BTSX","ATTR_POPULATION_NUMERIC":113100947.00000000000000,"VAL_YLL_RATE100K_NUMERIC":81.760000000,"VAL_YLL_COUNT_NUMERIC":92468.300000000,"VAL_YLL_COUNT_HIGH":163810.990000000,"VAL_YLL_COUNT_LOW":61604.130000000,"VAL_YLD_RATE100K_NUMERIC":10.950000000,"VAL_YLD_COUNT_NUMERIC":12388.140000000,"VAL_YLD_COUNT_HIGH":55640.770000000,"VAL_YLD_COUNT_LOW":2255.1500
+
+----------------------------------------------------------
+RETEST (correct columns): Supabase PostgREST (POST) - insert into reports without auth (expect RLS/policy denial)
+METHOD: POST
+URL: https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports
+STATUS CODE: 401
+RESPONSE BODY (truncated to 600 chars):
+{"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"reports\""}
+NOTE: Expected/actual denial confirms Row-Level Security (reports_insert_own policy requires an authenticated reporter_id = auth.uid()) is enforced at the database layer, not just in the UI.

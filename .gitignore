@@ -29,6 +29,9 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Supabase CLI local cache (per-machine, not project state)
+supabase/.temp/
+
 # Symbolication related
 app.*.symbols
 
@@ -54,3 +57,11 @@ firebase_options.dart
 # Environment
 .env
 *.env.local
+
+# Spartan AI config (contains API keys)
+.spartan/ai.env
+
+# Claude Code / AI tooling — local dev assistant config, not project source
+.claude/
+skills/
+ui-ux-pro-max-skill/

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 String humanize(String? value) {
   if (value == null || value.isEmpty) return 'Not specified';
   return value
@@ -44,7 +46,8 @@ Color statusColor(String? status, ColorScheme scheme) {
     case 'approved':
     case 'completed':
     case 'collected':
-      return Colors.green;
+    case 'low':
+      return AppColors.success;
     case 'rejected':
     case 'cancelled':
     case 'high':
@@ -52,7 +55,8 @@ Color statusColor(String? status, ColorScheme scheme) {
     case 'under_review':
     case 'scheduled':
     case 'moderate':
-      return Colors.orange;
+    case 'medium':
+      return AppColors.warning;
     default:
       return scheme.primary;
   }
@@ -83,10 +87,10 @@ class StatusChip extends StatelessWidget {
     final color = statusColor(status, Theme.of(context).colorScheme);
     return Chip(
       visualDensity: VisualDensity.compact,
-      avatar: Icon(Icons.circle, size: 10, color: color),
+      avatar: Icon(Icons.circle, size: 8, color: color),
       label: Text(humanize(status)),
-      side: BorderSide(color: color.withValues(alpha: .35)),
-      backgroundColor: color.withValues(alpha: .1),
+      side: const BorderSide(color: AppColors.border),
+      backgroundColor: AppColors.surfaceCard,
     );
   }
 }

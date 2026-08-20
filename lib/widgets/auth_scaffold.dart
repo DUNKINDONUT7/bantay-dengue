@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../theme/app_theme.dart';
+import 'shared_widgets.dart';
 
 /// Lightweight responsive shell shared by login and sign-up.
 ///
@@ -117,7 +118,7 @@ class AuthCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.xl),
         border: Border.all(color: AppColors.border),
       ),
-      child: Padding(padding: EdgeInsets.all(compact ? 20 : 28), child: child),
+      child: Padding(padding: EdgeInsets.all(compact ? 22 : 32), child: child),
     );
   }
 }
@@ -239,7 +240,7 @@ class _CompactBrand extends StatelessWidget {
       children: [
         const _BrandMark(size: 42),
         const SizedBox(width: 12),
-        const Expanded(child: _BrandName()),
+        const Expanded(child: BantayDengueLogo(fontSize: 19)),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
@@ -281,7 +282,11 @@ class _AuthOverview extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Row(
-            children: [_BrandMark(size: 48), SizedBox(width: 14), _BrandName()],
+            children: [
+              _BrandMark(size: 48),
+              SizedBox(width: 14),
+              BantayDengueLogo(fontSize: 21),
+            ],
           ),
           const SizedBox(height: 56),
           Text(eyebrow.toUpperCase(), style: AppTypography.eyebrow(context)),
@@ -289,10 +294,8 @@ class _AuthOverview extends StatelessWidget {
           Text(
             title,
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -1.1,
-              height: 1.08,
+              fontSize: 48,
+              height: 1.02,
             ),
           ),
           const SizedBox(height: 16),
@@ -342,23 +345,6 @@ class _BrandMark extends StatelessWidget {
           Icon(Icons.shield, color: AppColors.onPrimary, size: size * 0.58),
           Icon(Icons.pest_control, color: AppColors.primary, size: size * 0.25),
         ],
-      ),
-    );
-  }
-}
-
-class _BrandName extends StatelessWidget {
-  const _BrandName();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Text(
-      'BantayDengue',
-      style: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 20,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.45,
       ),
     );
   }

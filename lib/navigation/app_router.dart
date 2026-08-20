@@ -10,7 +10,6 @@ import '../screens/civilian/advisories_screen.dart';
 import '../screens/civilian/ai_chat_screen.dart';
 import '../screens/civilian/appointments_screen.dart';
 import '../screens/civilian/hotspot_map_screen.dart';
-import '../screens/civilian/notifications_screen.dart';
 import '../screens/civilian/profile_screen.dart';
 import '../screens/civilian/report_breeding_screen.dart';
 import '../screens/civilian/report_case_screen.dart';
@@ -18,6 +17,8 @@ import '../screens/civilian/report_history_screen.dart';
 import '../screens/civilian/report_hub_screen.dart';
 import '../screens/civilian/waste_collection_screen.dart';
 import '../screens/dashboard_screen.dart';
+import '../widgets/request_appointment_screen.dart';
+import '../widgets/request_waste_screen.dart';
 import '../screens/health_worker_dashboard.dart';
 import '../screens/login_screen.dart';
 import '../screens/setup_required_screen.dart';
@@ -134,6 +135,12 @@ GoRouter createAppRouter() => GoRouter(
         GoRoute(
           path: '/civilian/appointments',
           builder: (_, __) => const AppointmentsScreen(),
+          routes: [
+            GoRoute(
+              path: 'new',
+              builder: (_, __) => const RequestAppointmentScreen(),
+            ),
+          ],
         ),
         GoRoute(
           path: '/civilian/map',
@@ -142,14 +149,16 @@ GoRouter createAppRouter() => GoRouter(
         GoRoute(
           path: '/civilian/waste',
           builder: (_, __) => const WasteCollectionScreen(),
+          routes: [
+            GoRoute(
+              path: 'new',
+              builder: (_, __) => const RequestWasteScreen(),
+            ),
+          ],
         ),
         GoRoute(
           path: '/civilian/advisories',
           builder: (_, __) => const AdvisoriesScreen(),
-        ),
-        GoRoute(
-          path: '/civilian/notifications',
-          builder: (_, __) => const NotificationsScreen(),
         ),
         GoRoute(
           path: '/civilian/profile',
@@ -191,10 +200,6 @@ GoRouter createAppRouter() => GoRouter(
           builder: (_, __) => const AdvisoriesScreen(),
         ),
         GoRoute(
-          path: '/doctor/notifications',
-          builder: (_, __) => const NotificationsScreen(),
-        ),
-        GoRoute(
           path: '/doctor/profile',
           builder: (_, __) => const ProfileScreen(),
         ),
@@ -220,10 +225,6 @@ GoRouter createAppRouter() => GoRouter(
         GoRoute(
           path: '/waste-management/advisories',
           builder: (_, __) => const AdvisoriesScreen(),
-        ),
-        GoRoute(
-          path: '/waste-management/notifications',
-          builder: (_, __) => const NotificationsScreen(),
         ),
         GoRoute(
           path: '/waste-management/account',
@@ -268,10 +269,6 @@ GoRouter createAppRouter() => GoRouter(
         GoRoute(
           path: '/admin/advisories',
           builder: (_, __) => const AdvisoriesScreen(),
-        ),
-        GoRoute(
-          path: '/admin/notifications',
-          builder: (_, __) => const NotificationsScreen(),
         ),
         GoRoute(
           path: '/admin/profile',

@@ -1,11 +1,17 @@
 -- ============================================================================
 -- BantayDengue — ONE-TIME CONSOLIDATED FIX (v2)
--- Run this ENTIRE file, once, in Supabase Studio → SQL Editor → New query.
+-- Run this ENTIRE file ONCE, in Supabase Studio → SQL Editor → New query.
 -- Then refresh the app.
 --
--- Every statement here is safe to re-run. This is the single source of
--- truth for "what do I run in Supabase" — don't keep multiple fix files
--- around; if this file changes, it replaces the version you ran before.
+-- ⚠️ NOT SAFE TO RE-RUN once it has succeeded. STEP 1 below drops and
+-- recreates public.reports and public.waste_requests — that permanently
+-- deletes every row in both tables, every single time this file runs, even
+-- on a second/third run. This file's earlier claim that "every statement
+-- here is safe to re-run" was WRONG and caused real data loss on
+-- 2026-08-19 — see the note at the bottom of the file. If you already ran
+-- this once successfully, do not run it again. Future fixes belong in
+-- their own new file (e.g. APPLY_APPOINTMENTS_FIX.sql), never appended
+-- here.
 -- ============================================================================
 
 -- ── ROOT CAUSE, confirmed from your Supabase API logs ──────────────────────
@@ -23,8 +29,10 @@
 -- database (profiles, appointments, health_advisories, ...) is already
 -- correct — confirmed from your logs, those return 200. So this is NOT a
 -- full database rebuild. Only these two tables are wrong, and only these
+
+
 -- two get touched below.
---
+--R
 -- Fixing this means making the database match the app that's actually
 -- built (50 Dart files deep in that assumption) rather than rewriting the
 -- Flutter app to match an abandoned schema nothing currently uses.
@@ -154,4 +162,15 @@ where p.id is null
 -- structure was wrong, so any test data in them was already unusable by the
 -- app anyway). Nothing else in your database is touched.
 -- Refresh the app (or Hot Restart) after this finishes running.
+--
+-- ⚠️ 2026-08-19 INCIDENT NOTE: this file was re-run a second time (to pick
+-- up an unrelated appointments fix that used to live below this line) and
+-- it silently wiped out all reports/waste_requests rows that had been
+-- created since the first run — because STEP 1's DROP TABLE CASCADE is NOT
+-- safe to re-run once you have real data in these tables, despite the
+-- claim at the top of this file. That claim was wrong and has been
+-- corrected. The appointments fix now lives in its own file,
+-- `APPLY_APPOINTMENTS_FIX.sql`, specifically so this file never needs to be
+-- run a second time. Do NOT re-run this file again once it has succeeded
+-- once — if you need a future fix, put it in a NEW file instead.
 -- ============================================================================

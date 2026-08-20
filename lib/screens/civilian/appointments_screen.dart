@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../services/database_service.dart';
 import '../../utils/ui_helpers.dart';
@@ -37,99 +38,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   }
 
   Future<void> _book() async {
-    final reason = TextEditingController();
-    DateTime selected = DateTime.now().add(const Duration(days: 1));
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Request an appointment'),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextFormField(
-                  controller: reason,
-                  minLines: 3,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    labelText: 'Reason for consultation',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.calendar_month_outlined),
-                  label: Text(formatDateTime(selected)),
-                  onPressed: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: selected,
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 120)),
-                    );
-                    if (date == null || !context.mounted) return;
-                    final time = await showTimePicker(
-                      context: context,
-                      initialTime: TimeOfDay.fromDateTime(selected),
-                    );
-                    if (time == null) return;
-                    setDialogState(
-                      () => selected = DateTime(
-                        date.year,
-                        date.month,
-                        date.day,
-                        time.hour,
-                        time.minute,
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Request'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true) {
-      reason.dispose();
-      return;
-    }
-    if (reason.text.trim().length < 5) {
-      if (mounted) {
-        showMessage(
-          context,
-          'Please provide a short consultation reason.',
-          error: true,
-        );
-      }
-      reason.dispose();
-      return;
-    }
-    try {
-      await DatabaseService.instance.createAppointment(
-        scheduledAt: selected,
-        reason: reason.text.trim(),
-      );
-      if (mounted) showMessage(context, 'Appointment request sent.');
-      await _load();
-    } catch (error) {
-      if (mounted) showMessage(context, errorMessage(error), error: true);
-    } finally {
-      reason.dispose();
-    }
+    final booked = await context.push<bool>('/civilian/appointments/new');
+    if (booked == true) _load();
   }
 
   Future<void> _cancel(String id) async {
@@ -161,6 +71,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               action: IconButton(
                 onPressed: _load,
                 icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
               ),
             ),
             Expanded(

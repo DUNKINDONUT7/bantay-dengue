@@ -1,12 +1,24 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 
 /// Bounded dengue education assistant.
 ///
-/// When deployed, `ai-guidance` runs provider calls inside a Supabase Edge
-/// Function so no private API key is shipped to the app. A conservative local
-/// fallback keeps safety guidance available during a network outage.
+/// Real replies come from the `assistant-guidance` Supabase Edge Function,
+/// which forwards to any OpenAI-compatible chat-completions API (provider
+/// chosen via the AI_BASE_URL/AI_API_KEY/AI_MODEL secrets — see
+/// supabase/functions/assistant-guidance/index.ts). No private API key is
+/// ever shipped to the app. [live] on the result tells the caller whether
+/// that function actually answered, or the query fell back to the
+/// conservative local guidance below (used if the function isn't deployed,
+/// AI_API_KEY isn't set, or the network is unavailable).
+class AiReply {
+  final String text;
+  final bool live;
+  const AiReply(this.text, {required this.live});
+}
+
 class AiService {
   AiService._();
 
@@ -22,17 +34,25 @@ class AiService {
       'This is general dengue education—not a diagnosis or replacement for a '
       'licensed clinician. A blood test and professional assessment may be needed.';
 
-  static Future<String> getResponse(String question) => instance.ask(question);
-
-  Future<String> ask(String question) async {
+  Future<AiReply> ask(String question) async {
     final query = question.trim();
-    if (query.isEmpty) return 'Please enter a dengue-related question.';
+    if (query.isEmpty) {
+      return const AiReply(
+        'Please enter a dengue-related question.',
+        live: false,
+      );
+    }
     if (query.length > 600) {
-      return 'Please shorten the question to 600 characters or fewer. $_disclaimer';
+      return AiReply(
+        'Please shorten the question to 600 characters or fewer. $_disclaimer',
+        live: false,
+      );
     }
 
     final lower = query.toLowerCase();
-    if (_hasDangerSigns(lower)) return '$_emergency\n\n$_disclaimer';
+    if (_hasDangerSigns(lower)) {
+      return AiReply('$_emergency\n\n$_disclaimer', live: false);
+    }
 
     if (SupabaseConfig.isConfigured &&
         Supabase.instance.client.auth.currentSession != null) {
@@ -43,14 +63,33 @@ class AiService {
         );
         final data = response.data;
         if (data is Map && data['reply'] is String) {
-          return '${data['reply']}\n\n$_disclaimer';
+          return AiReply('${data['reply']}\n\n$_disclaimer', live: true);
         }
-      } catch (_) {
-        // Fall through to bounded offline guidance.
+      } on FunctionException catch (error) {
+        // The server-side rate limit (supabase/RATE_LIMIT_ADDITIONS.sql)
+        // rejected this — say so plainly instead of silently pretending the
+        // AI is offline, which would be misleading.
+        if (error.status == 429) {
+          return const AiReply(
+            "You're asking questions faster than the assistant can safely "
+            'answer. Please wait a moment before trying again.',
+            live: false,
+          );
+        }
+        // Any other failure falls through to bounded offline guidance, but
+        // log the real reason in debug builds — this is the one call in the
+        // app backed by an external provider outside our control, so silent
+        // failure here is genuinely hard to diagnose otherwise.
+        debugPrint(
+          'assistant-guidance call failed: status=${error.status} '
+          'details=${error.details}',
+        );
+      } catch (error) {
+        debugPrint('assistant-guidance call failed: $error');
       }
     }
 
-    return '${_offlineGuidance(lower)}\n\n$_disclaimer';
+    return AiReply('${_offlineGuidance(lower)}\n\n$_disclaimer', live: false);
   }
 
   bool _hasDangerSigns(String q) => [

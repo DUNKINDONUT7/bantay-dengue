@@ -43,6 +43,9 @@ class StatCard extends StatelessWidget {
   final Color color;
   final IconData icon;
   final VoidCallback? onTap;
+  /// Optional short status line under the label — e.g. "3 today". Only pass
+  /// values derived from real fetched data; never a fabricated trend.
+  final String? caption;
 
   const StatCard({
     super.key,
@@ -51,6 +54,7 @@ class StatCard extends StatelessWidget {
     required this.color,
     required this.icon,
     this.onTap,
+    this.caption,
   });
 
   @override
@@ -61,37 +65,51 @@ class StatCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppRadius.lg),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: AppGradients.cardSheen(color),
+            color: AppColors.surfaceCard,
             borderRadius: BorderRadius.circular(AppRadius.lg),
-            border: Border.all(color: color.withValues(alpha: 0.35)),
+            border: Border.all(color: AppColors.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  color: color.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: color, size: 18),
+                child: Icon(icon, color: color, size: 17),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Text(
                 value,
-                style: AppTypography.statNumber(context, color: color),
+                style: AppTypography.statNumber(context, color: AppColors.ink),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
                 label,
                 style: const TextStyle(
                   color: AppColors.textMuted,
-                  fontSize: 11,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w500,
                 ),
               ),
+              if (caption != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  caption!,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ],
           ),
         ),
@@ -119,22 +137,8 @@ class AlertBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.danger.withValues(alpha: 0.9),
-            AppColors.danger.withValues(alpha: 0.6),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: AppColors.danger,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.danger.withValues(alpha: 0.28),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,9 +254,9 @@ class _QuickActionButtonState extends State<QuickActionButton> {
               width: 58,
               height: 58,
               decoration: BoxDecoration(
-                gradient: AppGradients.cardSheen(widget.color),
+                color: AppColors.surfaceCard,
                 borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: widget.color.withValues(alpha: 0.35)),
+                border: Border.all(color: AppColors.border),
               ),
               child: Icon(widget.icon, color: widget.color, size: 26),
             ),
@@ -276,6 +280,102 @@ class _QuickActionButtonState extends State<QuickActionButton> {
   }
 }
 
+// ─── Fly Action Button ──────────────────────────────────────────────────────
+/// Pill-shaped quick-action button with a playful icon "liftoff" flourish on
+/// hover/press instead of a static icon — for dashboard quick-action rows.
+/// Adapted from the classic animated "Send" button pattern, but the label
+/// never slides away on hover: unlike a single-purpose send button, each of
+/// these means something different and has to stay legible while browsing.
+class FlyActionButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  const FlyActionButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  @override
+  State<FlyActionButton> createState() => _FlyActionButtonState();
+}
+
+class _FlyActionButtonState extends State<FlyActionButton> {
+  bool _hovering = false;
+  bool _pressed = false;
+
+  bool get _active => _hovering || _pressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = widget.filled ? AppColors.onPrimary : AppColors.primary;
+    final bg = widget.filled
+        ? AppColors.primary
+        : (_active ? AppColors.primaryGlow : Colors.transparent);
+    final border = widget.filled
+        ? Colors.transparent
+        : AppColors.primary.withValues(alpha: _active ? 0.6 : 0.35);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.95 : (_hovering ? 1.03 : 1.0),
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              border: Border.all(color: border),
+              boxShadow: _active && widget.filled
+                  ? AppGlow.soft(AppColors.primary)
+                  : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: _active ? 1.0 : 0.0),
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutBack,
+                  builder: (context, t, child) => Transform.translate(
+                    offset: Offset(t * 3, -t * 3),
+                    child: Transform.rotate(angle: t * 0.35, child: child),
+                  ),
+                  child: Icon(widget.icon, color: fg, size: 18),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── BantayDengue Logo ─────────────────────────────────────────────────────────
 class BantayDengueLogo extends StatelessWidget {
   final double fontSize;
@@ -283,23 +383,14 @@ class BantayDengueLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final base = AppTypography.heading(context).copyWith(fontSize: fontSize);
     return RichText(
       text: TextSpan(
         children: [
-          TextSpan(
-            text: 'Bantay',
-            style: AppTypography.subheading(context).copyWith(
-              fontSize: fontSize,
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white
-                  : AppColors.textPrimaryLight,
-            ),
-          ),
+          TextSpan(text: 'Bantay', style: base.copyWith(color: AppColors.ink)),
           TextSpan(
             text: 'Dengue',
-            style: AppTypography.subheading(
-              context,
-            ).copyWith(fontSize: fontSize, color: AppColors.primary),
+            style: base.copyWith(color: AppColors.danger),
           ),
         ],
       ),
@@ -364,27 +455,13 @@ class RiskBadge extends StatelessWidget {
         color = AppColors.riskHigh;
         break;
       case 'medium':
+      case 'moderate':
         color = AppColors.riskMedium;
         break;
       default:
         color = AppColors.riskLow;
     }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-      ),
-      child: Text(
-        risk,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w600,
-          fontSize: 11,
-        ),
-      ),
-    );
+    return _DotPill(label: risk, color: color);
   }
 }
 
@@ -396,20 +473,44 @@ class StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _DotPill(label: label, color: color);
+  }
+}
+
+/// Shared minimal treatment for both badge types: cream fill, thin border,
+/// a colored dot instead of a heavy tinted background.
+class _DotPill extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _DotPill({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: AppColors.surfaceCard,
         borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        border: Border.all(color: AppColors.border),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w700,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

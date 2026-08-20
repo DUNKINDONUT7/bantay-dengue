@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/database_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
 import '../widgets/section_header.dart';
 
@@ -14,6 +15,7 @@ class StaffAppointmentsScreen extends StatefulWidget {
 
 class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
   List<Map<String, dynamic>> _items = [];
+  final Set<String> _busyIds = {};
   Object? _error;
   bool _loading = true;
   String _filter = 'all';
@@ -39,6 +41,8 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
   }
 
   Future<void> _update(String id, String status) async {
+    if (_busyIds.contains(id)) return;
+    setState(() => _busyIds.add(id));
     try {
       await DatabaseService.instance.updateAppointmentStatus(id, status);
       if (mounted) {
@@ -50,6 +54,8 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
       await _load();
     } catch (error) {
       if (mounted) showMessage(context, errorMessage(error), error: true);
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(id));
     }
   }
 
@@ -70,6 +76,7 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
               action: IconButton(
                 onPressed: _load,
                 icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
               ),
             ),
             SizedBox(
@@ -114,6 +121,8 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                       final item = filtered[index];
                       final patient = item['profiles'] as Map<String, dynamic>?;
                       final status = '${item['status']}';
+                      final id = '${item['id']}';
+                      final busy = _busyIds.contains(id);
                       return Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -154,23 +163,42 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                                   spacing: 8,
                                   children: [
                                     OutlinedButton(
-                                      onPressed: () =>
-                                          _update('${item['id']}', 'rejected'),
+                                      onPressed: busy
+                                          ? null
+                                          : () => _update(id, 'rejected'),
                                       child: const Text('Reject'),
                                     ),
                                     FilledButton(
-                                      onPressed: () =>
-                                          _update('${item['id']}', 'approved'),
-                                      child: const Text('Approve'),
+                                      onPressed: busy
+                                          ? null
+                                          : () => _update(id, 'approved'),
+                                      child: busy
+                                          ? const SizedBox.square(
+                                              dimension: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: AppColors.onPrimary,
+                                              ),
+                                            )
+                                          : const Text('Approve'),
                                     ),
                                   ],
                                 ),
                               ] else if (status == 'approved') ...[
                                 const SizedBox(height: 12),
                                 FilledButton.icon(
-                                  onPressed: () =>
-                                      _update('${item['id']}', 'completed'),
-                                  icon: const Icon(Icons.done),
+                                  onPressed: busy
+                                      ? null
+                                      : () => _update(id, 'completed'),
+                                  icon: busy
+                                      ? const SizedBox.square(
+                                          dimension: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.onPrimary,
+                                          ),
+                                        )
+                                      : const Icon(Icons.done),
                                   label: const Text('Mark completed'),
                                 ),
                               ],

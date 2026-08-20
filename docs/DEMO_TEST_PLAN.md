@@ -1,47 +1,52 @@
 # Manual demo test plan
 
-Run with `APP_MODE=demo`. Restart between scenarios when a clean seed is needed.
+The Flutter client no longer has a local `APP_MODE=demo` fixture mode — every login goes through
+the real Supabase project (`lib/config/supabase_config.dart`). Run each scenario below signed in
+with a real test account for that role. Keep one account per role (resident, health worker, waste
+personnel, admin) in the project's `profiles` table for repeatable demos/grading.
 
 ## Resident
 
-1. Select Resident and enter the demo.
+1. Sign in with a `resident` account.
 2. Confirm Home shows metrics, quick actions, advisories, weather context, and WHO context/fallback.
-3. Open **Report a case**. Validate required symptoms, urgent warning guidance, location capture, and submit.
-4. Open **Breeding site** or a Waste report. Enable evidence simulation and submit.
-5. Open Reports and confirm only Juan Dela Cruz’s reports are listed.
-6. Open Map. Confirm privacy notice and displaced/generalized suspected-case behavior.
-7. Try a different resident’s report-detail URL and confirm it is blocked as protected.
+3. Open **Report a case**. Validate required fields, location capture, and submit.
+4. Open **Report a breeding site** / waste report. Attach a photo and submit.
+5. Open **My Reports** and confirm only this account's own reports are listed (RLS-enforced —
+   see `docs/API_TEST_LOG.md` for a live proof of the underlying policy).
+6. While a report is still `pending`, use Edit and Delete on it; confirm both are gone once staff
+   moves it to `under_review`.
+7. Open Map. Confirm the privacy notice and generalized/displaced pin behavior for suspected cases.
 8. Book an appointment. Confirm it appears Pending.
-9. Open an Approved appointment QR and confirm the demo-token disclaimer.
-10. Ask Bantay AI about prevention, symptoms, and severe bleeding; confirm the last case escalates to in-person care without diagnosis.
+9. Ask Bantay AI about prevention, symptoms, and severe bleeding; confirm the last case escalates
+   to in-person care without diagnosing.
 
 ## Health Worker
 
-1. Select Health Worker.
-2. Open Reports and a pending item.
-3. Test Verify, Request information, Reject, and Resolve actions across available reports.
-4. Confirm reviewer note and assignment update.
-5. Open Appointments and change Pending to Approved/Rescheduled/Completed.
-6. Open Map and inspect exact operational details.
+1. Sign in with a `health_worker` account.
+2. Open the Verification Queue and a pending report.
+3. Test Verify, Reject, and Resolve actions across available reports.
+4. Confirm the reviewer note and status change persist after refresh.
+5. Open Staff Appointments and change Pending to Approved/Completed.
+6. Open Map and inspect exact (non-generalized) operational details.
 7. Publish an advisory with audience and severity.
-8. Confirm direct navigation to Users or Analytics redirects to Dashboard.
+8. Confirm direct navigation to Users or Analytics redirects to Dashboard (role fence).
 
-## Waste Staff
+## Waste Personnel
 
-1. Select Waste Staff.
-2. Confirm Reports and Map omit suspected-case records.
-3. Open Requests, search/filter, and move an item from Scheduled → Assigned → In progress → Collected.
-4. Click Start route and confirm feedback.
-5. Confirm direct Appointments, Users, Analytics, and Assistant routes redirect to Dashboard.
+1. Sign in with a `waste_personnel` account.
+2. Confirm Reports/Map screens are not reachable (role-fenced) — this role only sees the
+   operations dashboard and account workspace.
+3. Open the waste dashboard, filter by status, and move a request through
+   Scheduled → Assigned → In progress → Collected.
+4. Confirm direct Appointments, Users, Analytics, and Assistant routes redirect away.
 
 ## Administrator
 
-1. Select Administrator.
-2. Open Users, add a demo user, and deactivate/reactivate a non-admin account.
-3. Confirm the admin account cannot be deactivated through the demo control.
-4. Open Analytics and switch 7/30/90-day filters.
-5. Export CSV; confirm the preview appears and text is copied.
-6. Review reports and publish an advisory.
+1. Sign in with an `admin` account.
+2. Open User Management, search/filter users, and deactivate/reactivate a non-admin account.
+3. Confirm the signed-in admin's own account cannot be deactivated.
+4. Open Analytics/system activity and review the audit log.
+5. Review reports and publish an announcement.
 
 ## Automated checks
 
@@ -50,4 +55,7 @@ flutter analyze
 flutter test
 ```
 
-For Supabase integration, add policy tests that authenticate one account per role and verify cross-role/cross-barangay denials before connecting real data.
+For live API/RLS verification without opening the app, see `docs/API_TEST_LOG.md` — a real
+`curl` run against the WHO, Open-Meteo, and Supabase endpoints, including a request that
+confirms an unauthenticated write is rejected by Row-Level Security (`401`,
+`42501 — row-level security policy violation`).

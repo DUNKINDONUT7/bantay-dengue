@@ -34,6 +34,18 @@ class DengueApiService {
   static const _mortalityUrl =
       'https://xmart-api-public.who.int/DEX_CMS/GHE_FULL_DD';
 
+  static final _iso3Pattern = RegExp(r'^[A-Z]{3}$');
+
+  /// [iso3] is interpolated straight into a WHO OData `$filter` string
+  /// (e.g. `"ISO3 eq '$iso3'"`). The UI only ever offers a fixed country
+  /// dropdown, but this method is a public API on its own — validate the
+  /// shape here too, so a stray quote can never break out of the filter.
+  static void _assertValidIso3(String iso3) {
+    if (!_iso3Pattern.hasMatch(iso3)) {
+      throw DengueApiException('Invalid country code: $iso3');
+    }
+  }
+
   static Future<http.Response> _get(Uri uri) async {
     try {
       final response = await http.get(uri).timeout(const Duration(seconds: 15));
@@ -64,6 +76,7 @@ class DengueApiService {
     String iso3 = 'PHL',
     int weeks = 12,
   }) async {
+    _assertValidIso3(iso3);
     final uri = Uri.parse(_surveillanceUrl).replace(
       queryParameters: {
         r'$filter': "ISO3 eq '$iso3'",
@@ -96,6 +109,7 @@ class DengueApiService {
     String iso3 = 'PHL',
     int years = 6,
   }) async {
+    _assertValidIso3(iso3);
     final uri = Uri.parse(_mortalityUrl).replace(
       queryParameters: {
         r'$filter':

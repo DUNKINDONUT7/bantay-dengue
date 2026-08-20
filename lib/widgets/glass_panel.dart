@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// Lightweight bordered surface retained under the old API name for screen
-/// compatibility. It intentionally avoids BackdropFilter blur and large glow
-/// layers, which are expensive on mobile GPUs and Flutter Web.
+/// Flat, minimally-bordered surface — the default card treatment for the
+/// editorial design language. No blur, no gradient, no glow by default; a
+/// soft shadow is only added when [glow] is explicitly requested (used
+/// sparingly for a single emphasized panel, not as a general pattern).
 class GlassPanel extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -18,22 +19,19 @@ class GlassPanel extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.radius = AppRadius.lg,
-    this.glowColor = AppColors.primary,
+    this.glowColor = AppColors.ink,
     this.glow = false,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final panel = Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: dark ? AppColors.surfaceCard : AppColors.surfaceCardLight,
+        color: AppColors.surfaceCard,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(
-          color: dark ? AppColors.border : AppColors.borderLight,
-        ),
+        border: Border.all(color: AppColors.border),
         boxShadow: glow ? AppGlow.soft(glowColor) : null,
       ),
       child: child,

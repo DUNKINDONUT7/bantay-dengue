@@ -3,8 +3,11 @@ import 'package:go_router/go_router.dart';
 
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
+import '../widgets/analytics_widgets.dart';
 import '../widgets/dengue_stats_card.dart';
+import '../widgets/notifications_panel.dart';
 import '../widgets/section_header.dart';
 import '../widgets/shared_widgets.dart';
 
@@ -35,6 +38,7 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
     });
     try {
       final values = await Future.wait([
+        // Both report types need review — dengue_case and breeding_site.
         DatabaseService.instance.fetchReports(),
         DatabaseService.instance.fetchAppointments(),
         DatabaseService.instance.fetchHotspots(),
@@ -58,6 +62,22 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
         .where((item) => ['pending', 'approved'].contains(item['status']))
         .length;
     final high = _hotspots.where((item) => item['risk_level'] == 'high').length;
+
+    final statusCounts = <String, int>{};
+    for (final report in _reports) {
+      final status = '${report['status'] ?? 'pending'}';
+      statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+    }
+    final topHotspots = _hotspots
+        .take(5)
+        .map(
+          (h) => (
+            label: '${h['barangay'] ?? 'Unmapped area'}',
+            value: (h['case_count'] as num?)?.toInt() ?? 0,
+          ),
+        )
+        .toList();
+
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
@@ -72,8 +92,16 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
                 action: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const DemoAccessButton(),
-                    IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+                    IconButton(
+                      onPressed: () => openNotificationsPanel(context),
+                      icon: const Icon(Icons.notifications_outlined),
+                      tooltip: 'Notifications',
+                    ),
+                    IconButton(
+                      onPressed: _load,
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Refresh',
+                    ),
                   ],
                 ),
               ),
@@ -94,33 +122,84 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final count = constraints.maxWidth >= 800 ? 3 : 1;
+                    final count = constraints.maxWidth >= 800
+                        ? 3
+                        : (constraints.maxWidth >= 480 ? 2 : 1);
                     return GridView.count(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisCount: count,
                       mainAxisSpacing: 10,
                       crossAxisSpacing: 10,
-                      childAspectRatio: count == 1 ? 3.4 : 1.7,
+                      childAspectRatio: count == 1 ? 2.6 : 1.3,
                       children: [
-                        _Metric(
-                          title: 'Reports to review',
-                          value: pending,
+                        StatCard(
+                          value: '$pending',
+                          label: 'Reports to review',
                           icon: Icons.fact_check_outlined,
+                          color: AppColors.warning,
                           onTap: () => context.go('/doctor/verification'),
                         ),
-                        _Metric(
-                          title: 'Active appointments',
-                          value: appointments,
+                        StatCard(
+                          value: '$appointments',
+                          label: 'Active appointments',
                           icon: Icons.event_outlined,
+                          color: AppColors.info,
                           onTap: () => context.go('/doctor/appointments'),
                         ),
-                        _Metric(
-                          title: 'High-risk areas',
-                          value: high,
+                        StatCard(
+                          value: '$high',
+                          label: 'High-risk areas',
                           icon: Icons.location_on_outlined,
+                          color: AppColors.danger,
                           onTap: () => context.go('/doctor/hotspots'),
                         ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SectionHeader(title: 'Verification & hotspots'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final statusPanel = AnalyticsPanel(
+                      title: 'Reports by status',
+                      child: StatusDonut(
+                        counts: statusCounts,
+                        colors: const {
+                          'verified': AppColors.success,
+                          'resolved': AppColors.success,
+                          'pending': AppColors.warning,
+                          'under_review': AppColors.warning,
+                          'rejected': AppColors.danger,
+                        },
+                      ),
+                    );
+                    final hotspotsPanel = AnalyticsPanel(
+                      title: 'Hotspots by barangay',
+                      subtitle: 'verified case count',
+                      child: RankedList(
+                        items: topHotspots,
+                        barColor: AppColors.danger,
+                      ),
+                    );
+                    if (constraints.maxWidth >= 720) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: statusPanel),
+                          const SizedBox(width: 12),
+                          Expanded(flex: 2, child: hotspotsPanel),
+                        ],
+                      );
+                    }
+                    return Column(
+                      children: [
+                        statusPanel,
+                        const SizedBox(height: 12),
+                        hotspotsPanel,
                       ],
                     );
                   },
@@ -170,50 +249,4 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
       ),
     );
   }
-}
-
-class _Metric extends StatelessWidget {
-  final String title;
-  final int value;
-  final IconData icon;
-  final VoidCallback onTap;
-  const _Metric({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          children: [
-            CircleAvatar(child: Icon(icon)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$value',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(title),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
-      ),
-    ),
-  );
 }

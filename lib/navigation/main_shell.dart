@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+import '../widgets/liquid_glass.dart';
+import '../widgets/notifications_panel.dart';
 import '../widgets/shared_widgets.dart';
 import '../widgets/futuristic_backdrop.dart';
 
@@ -79,12 +81,6 @@ const List<NavItem> civilianExtraNavItems = [
     activeIcon: Icons.campaign,
     path: '/civilian/advisories',
   ),
-  NavItem(
-    label: 'Notifications',
-    icon: Icons.notifications_outlined,
-    activeIcon: Icons.notifications,
-    path: '/civilian/notifications',
-  ),
 ];
 
 const List<NavItem> doctorNavItems = [
@@ -132,12 +128,6 @@ const List<NavItem> doctorExtraNavItems = [
     icon: Icons.campaign_outlined,
     activeIcon: Icons.campaign,
     path: '/doctor/advisories',
-  ),
-  NavItem(
-    label: 'Notifications',
-    icon: Icons.notifications_outlined,
-    activeIcon: Icons.notifications,
-    path: '/doctor/notifications',
   ),
 ];
 
@@ -193,12 +183,6 @@ const List<NavItem> adminExtraNavItems = [
     activeIcon: Icons.health_and_safety,
     path: '/admin/advisories',
   ),
-  NavItem(
-    label: 'Notifications',
-    icon: Icons.notifications_outlined,
-    activeIcon: Icons.notifications,
-    path: '/admin/notifications',
-  ),
 ];
 
 const List<NavItem> wasteNavItems = [
@@ -228,14 +212,7 @@ const List<NavItem> wasteNavItems = [
   ),
 ];
 
-const List<NavItem> wasteExtraNavItems = [
-  NavItem(
-    label: 'Notifications',
-    icon: Icons.notifications_outlined,
-    activeIcon: Icons.notifications,
-    path: '/waste-management/notifications',
-  ),
-];
+const List<NavItem> wasteExtraNavItems = [];
 
 // --- Generic role shell (mobile bottom bar / tablet rail / web sidebar) -----
 
@@ -429,15 +406,21 @@ class _MobileLayout extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBody: true,
       body: child,
-      bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border)),
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.fromLTRB(
+          12,
+          0,
+          12,
+          12 + MediaQuery.of(context).padding.bottom,
         ),
-        child: SafeArea(
-          top: false,
+        child: LiquidGlass(
+          padding: EdgeInsets.zero,
+          borderRadius: BorderRadius.circular(AppRadius.xl),
           child: BottomNavigationBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
             currentIndex: selected.clamp(0, destinations.length - 1),
             type: BottomNavigationBarType.fixed,
             onTap: (index) {
@@ -491,9 +474,19 @@ class _TabletLayout extends StatelessWidget {
                 }
               },
               labelType: NavigationRailLabelType.all,
-              leading: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: _ShieldBadge(),
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
+                  children: [
+                    const _ShieldBadge(),
+                    const SizedBox(height: 14),
+                    IconButton(
+                      onPressed: () => openNotificationsPanel(context),
+                      icon: const Icon(Icons.notifications_outlined),
+                      tooltip: 'Notifications',
+                    ),
+                  ],
+                ),
               ),
               destinations: [
                 ...navItems.map(
@@ -547,7 +540,7 @@ class _WebLayout extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: ResponsiveContainer(child: child),
             ),
           ),
@@ -586,15 +579,27 @@ class _WebSidebar extends StatelessWidget {
             child: BantayDengueLogo(fontSize: 17),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            child: Text(
-              roleLabel,
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.4,
-              ),
+            padding: const EdgeInsets.fromLTRB(20, 0, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    roleLabel,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => openNotificationsPanel(context),
+                  icon: const Icon(Icons.notifications_outlined, size: 19),
+                  tooltip: 'Notifications',
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
             ),
           ),
           const Padding(
@@ -652,7 +657,7 @@ class _WebSidebar extends StatelessWidget {
   }
 }
 
-class _SidebarNavItem extends StatelessWidget {
+class _SidebarNavItem extends StatefulWidget {
   final NavItem item;
   final bool isActive;
   final VoidCallback onTap;
@@ -663,38 +668,89 @@ class _SidebarNavItem extends StatelessWidget {
   });
 
   @override
+  State<_SidebarNavItem> createState() => _SidebarNavItemState();
+}
+
+class _SidebarNavItemState extends State<_SidebarNavItem> {
+  bool _hovering = false;
+
+  @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      margin: const EdgeInsets.symmetric(vertical: 2),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: isActive
-            ? Border.all(color: AppColors.primary.withValues(alpha: 0.3))
-            : null,
-      ),
-      child: Material(
-        color: isActive ? AppColors.primaryGlow : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: ListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-          leading: Icon(
-            isActive ? item.activeIcon : item.icon,
-            color: isActive ? AppColors.primary : AppColors.textMuted,
-            size: 20,
-          ),
-          title: Text(
-            item.label,
-            style: TextStyle(
-              color: isActive ? AppColors.primary : AppColors.textSecondary,
-              fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-              fontSize: 14,
-            ),
-          ),
-          onTap: onTap,
-          shape: RoundedRectangleBorder(
+    final active = widget.isActive;
+    final highlighted = active || _hovering;
+    final fg = active
+        ? AppColors.primary
+        : (_hovering ? AppColors.textPrimary : AppColors.textSecondary);
+    final iconColor = active
+        ? AppColors.primary
+        : (_hovering ? AppColors.textSecondary : AppColors.textMuted);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        transform: Matrix4.translationValues(highlighted ? 3 : 0, 0, 0),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: active
+              ? AppColors.primaryGlow
+              : (_hovering ? AppColors.surfaceElevated : Colors.transparent),
+          border: active
+              ? Border.all(color: AppColors.primary.withValues(alpha: 0.3))
+              : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
             borderRadius: BorderRadius.circular(10),
+            onTap: widget.onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 11,
+              ),
+              child: Row(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    width: active ? 3 : 0,
+                    height: 16,
+                    margin: EdgeInsets.only(right: active ? 9 : 0),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  AnimatedScale(
+                    scale: highlighted ? 1.1 : 1.0,
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    child: Icon(
+                      active ? widget.item.activeIcon : widget.item.icon,
+                      color: iconColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.item.label,
+                      style: TextStyle(
+                        color: fg,
+                        fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -711,7 +767,7 @@ class _ShieldBadge extends StatelessWidget {
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        gradient: AppGradients.brandSweep,
+        color: AppColors.ink,
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: const Icon(Icons.shield, color: AppColors.onPrimary, size: 20),

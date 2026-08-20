@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// Lightweight monochrome shell backdrop.
-///
-/// The previous grid/glow painter added layers to every role screen. A flat,
-/// high-contrast surface is faster to composite on lower-end phones and keeps
-/// the Shadcn-inspired interface intentionally quiet.
+/// Flat cream backdrop shared by every role shell.
 class FuturisticBackdrop extends StatelessWidget {
   final Widget child;
 
@@ -14,10 +10,6 @@ class FuturisticBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return ColoredBox(
-      color: dark ? AppColors.background : AppColors.backgroundLight,
-      child: child,
-    );
+    return ColoredBox(color: AppColors.background, child: child);
   }
 }

@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../services/database_service.dart';
 import '../services/image_picker_stub.dart';
+import '../services/location_helper.dart';
 import '../utils/ui_helpers.dart';
 import 'section_header.dart';
 
@@ -59,40 +59,20 @@ class _EditReportScreenState extends State<EditReportScreen> {
   Future<void> _useCurrentLocation() async {
     setState(() => _locating = true);
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        if (mounted) {
-          showMessage(
-            context,
-            'Location permission was denied.',
-            error: true,
-          );
-        }
-        return;
-      }
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        if (mounted) {
-          showMessage(context, 'Turn on location services first.', error: true);
-        }
-        return;
-      }
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 12),
-        ),
-      );
-      _latitude.text = position.latitude.toStringAsFixed(6);
-      _longitude.text = position.longitude.toStringAsFixed(6);
+      final loc = await LocationHelper.getCurrentLocation();
+      _latitude.text = loc.latitude.toStringAsFixed(6);
+      _longitude.text = loc.longitude.toStringAsFixed(6);
       if (mounted) setState(() {});
-    } catch (error) {
-      if (mounted) {
-        showMessage(context, "Couldn't get your location.", error: true);
-      }
+    } on LocationFailure catch (failure) {
+      if (!mounted) return;
+      final message = switch (failure.reason) {
+        LocationFailureReason.permissionDenied =>
+          'Location permission was denied.',
+        LocationFailureReason.serviceDisabled =>
+          'Turn on location services first.',
+        LocationFailureReason.other => "Couldn't get your location.",
+      };
+      showMessage(context, message, error: true);
     } finally {
       if (mounted) setState(() => _locating = false);
     }

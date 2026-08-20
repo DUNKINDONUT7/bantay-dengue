@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../services/ai_service.dart';
+import '../../theme/app_theme.dart';
+import '../../utils/submit_throttle.dart';
+import '../../utils/ui_helpers.dart';
 import '../../widgets/section_header.dart';
 
 class AiChatScreen extends StatefulWidget {
@@ -10,14 +13,15 @@ class AiChatScreen extends StatefulWidget {
   State<AiChatScreen> createState() => _AiChatScreenState();
 }
 
-class _AiChatScreenState extends State<AiChatScreen> {
+class _AiChatScreenState extends State<AiChatScreen> with SubmitThrottle {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
-  final List<({String text, bool user})> _messages = [
+  final List<({String text, bool user, bool live})> _messages = [
     (
       text:
           'Hello! I provide bounded dengue education. I cannot diagnose or replace a clinician. Ask about symptoms, warning signs, prevention, hydration, testing, or when to seek care.',
       user: false,
+      live: false,
     ),
   ];
   bool _sending = false;
@@ -32,8 +36,13 @@ class _AiChatScreenState extends State<AiChatScreen> {
   Future<void> _send([String? preset]) async {
     final question = (preset ?? _controller.text).trim();
     if (question.isEmpty || _sending) return;
+    final wait = checkSubmitCooldown(cooldown: const Duration(seconds: 3));
+    if (wait != null) {
+      showMessage(context, 'Please wait ${wait}s before sending another message.', error: true);
+      return;
+    }
     setState(() {
-      _messages.add((text: question, user: true));
+      _messages.add((text: question, user: true, live: false));
       _sending = true;
       _controller.clear();
     });
@@ -41,7 +50,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
     final answer = await AiService.instance.ask(question);
     if (!mounted) return;
     setState(() {
-      _messages.add((text: answer, user: false));
+      _messages.add((text: answer.text, user: false, live: answer.live));
       _sending = false;
     });
     _scrollDown();
@@ -135,7 +144,17 @@ class _AiChatScreenState extends State<AiChatScreen> {
                               ).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: SelectableText(message.text),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SelectableText(message.text),
+                          if (!message.user && index != 0) ...[
+                            const SizedBox(height: 6),
+                            _SourceBadge(live: message.live),
+                          ],
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -172,6 +191,38 @@ class _AiChatScreenState extends State<AiChatScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Honest signal for which path answered: the live AI provider, or the
+/// bounded offline fallback (shown when the assistant-guidance function
+/// isn't deployed/configured, or the network is unavailable).
+class _SourceBadge extends StatelessWidget {
+  final bool live;
+  const _SourceBadge({required this.live});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = live ? AppColors.success : AppColors.textMuted;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          live ? Icons.bolt_outlined : Icons.wifi_off_outlined,
+          size: 12,
+          color: color,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          live ? 'Live AI' : 'Offline guidance',
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }
