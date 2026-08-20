@@ -41,7 +41,7 @@ flagged **action needed** — read those before signing the declaration.
 - [x] GET Requests Tested — 5 live GET calls logged in `docs/API_TEST_LOG.md`
 - [x] POST Requests Tested — unauthenticated insert correctly rejected (401, RLS policy)
 - [x] PUT/PATCH Requests Tested *(via app, not curl)* — exercised live through the Edit-report flow; no standalone curl/Postman log yet
-- [x] DELETE Requests Tested *(via app, not curl)* — exercised live through the Delete-report flow (soft delete); same caveat
+- [ ] **DELETE Requests Tested — do not check this.** Verified in code: `deleteReport()` never calls a real `.delete()` — it's `.update({'deleted_at': ...})`, a soft delete by design. There is no HTTP DELETE anywhere in this app, so there is nothing to show if asked. This is a legitimate, explainable design choice (recoverable, keeps audit history, RLS blocks a real hard delete too) — say that if asked, but do not claim a DELETE request was tested.
 - [x] API Responses Properly Displayed — dashboard stat cards, weather-risk card, WHO trend panel
 - [x] Error Responses Properly Handled — empty-state handling, typed exceptions
 - [x] Authentication/Authorization Implemented — RLS proven live (unauthenticated write → `42501` policy violation)
