@@ -41,6 +41,12 @@ dependencies:
   # (SharedPreferencesGotrueAsyncStorage) for local session persistence, and
   # the test suite needs it as a direct dependency to mock that storage.
   shared_preferences: ^2.2.2
+  csv: ^8.0.0
+  pdf: ^3.13.0
+  printing: ^5.15.0
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.0
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

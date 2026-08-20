@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../services/database_service.dart';
 import '../../utils/ui_helpers.dart';
+import '../../widgets/appointment_qr_checkin.dart';
 import '../../widgets/section_header.dart';
 
 class AppointmentsScreen extends StatefulWidget {
@@ -90,10 +91,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final item = _items[index];
+                      final status = '${item['status'] ?? 'pending'}';
                       final canCancel = [
                         'pending',
                         'approved',
-                      ].contains(item['status']);
+                      ].contains(status);
+                      final canCheckIn = status == 'approved';
                       return Card(
                         child: ListTile(
                           leading: const CircleAvatar(
@@ -106,7 +109,21 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                           trailing: Wrap(
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              StatusChip('${item['status'] ?? 'pending'}'),
+                              StatusChip(status),
+                              if (canCheckIn)
+                                IconButton(
+                                  onPressed: () => showAppointmentQrDialog(
+                                    context,
+                                    appointmentId: '${item['id']}',
+                                    reason:
+                                        '${item['reason'] ?? 'Health consultation'}',
+                                    scheduledLabel: formatDateTime(
+                                      item['scheduled_at'],
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.qr_code_2),
+                                  tooltip: 'Show check-in code',
+                                ),
                               if (canCancel)
                                 IconButton(
                                   onPressed: () => _cancel('${item['id']}'),

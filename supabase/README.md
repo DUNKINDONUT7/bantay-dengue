@@ -2,7 +2,7 @@
 
 The database is never auto-migrated by the app. Every file below is applied by hand, once, in **Supabase Studio → SQL Editor → New query**, by an authorized project owner. This file is the index — check it before running or writing any SQL here, instead of guessing from file names or comments inside the files (some of those comments have been wrong before; see the incident note in `APPLY_THIS_NOW.sql`).
 
-Status below was confirmed live on **2026-08-19** by querying the actual project (`information_schema`, `pg_proc`, `storage.buckets`) — not assumed from the files.
+Status below was confirmed live on **2026-08-20** by querying the actual project (`information_schema`, `pg_proc`, `storage.buckets`) — not assumed from the files.
 
 ## Run order (incremental path — what actually built this project)
 
@@ -12,10 +12,10 @@ Status below was confirmed live on **2026-08-19** by querying the actual project
 | 2 | `APPLY_THIS_NOW.sql` | ✅ Applied | Rebuilds `reports`/`waste_requests` (fixes contamination from an abandoned schema — see `_archive/README.md`), report rate limit, profile-insert fix. **Do not re-run** — see the warning at the top of that file |
 | 3 | `BantayDengue_FINAL.sql` | ✅ Applied | Waste Personnel role/workflow, account suspension, `status_history`, notifications, audit triggers |
 | 4 | `RATE_LIMIT_ADDITIONS.sql` | ✅ Applied | Extends the database-enforced rate limit to `appointments` and `waste_requests` |
-| 5 | `AVATAR_STORAGE.sql` | ⏳ Pending | Public avatar storage bucket + RLS (no `avatars` bucket exists live yet) |
-| 6 | `APPLY_APPOINTMENTS_FIX.sql` | ⏳ Pending | Rebuilds `appointments` (same class of contamination as step 2 — appointment booking is currently broken without this) |
+| 5 | `AVATAR_STORAGE.sql` | ✅ Applied | Public avatar storage bucket + RLS — confirmed live: `avatars` bucket exists, public, 3 MiB limit |
+| 6 | `APPLY_APPOINTMENTS_FIX.sql` | ✅ Applied | Rebuilds `appointments` — confirmed live: correct columns (`patient_id`, `assigned_doctor`, `scheduled_at`, `reason`, `status`), no leftover NOT NULL contamination. **Do not re-run** — table now holds real bookings |
 
-Run 5 and 6 next, in either order — both are independent, one-time, and safe to run exactly once. Neither is safe to re-run after it succeeds (both `DROP TABLE`/recreate — see the warning at the top of each file).
+Everything in the incremental path is applied. Appointment booking and avatar upload are unblocked as of 2026-08-20.
 
 ## Standalone / as-needed
 

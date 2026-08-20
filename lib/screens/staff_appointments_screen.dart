@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
+import '../widgets/appointment_qr_checkin.dart';
 import '../widgets/section_header.dart';
 
 class StaffAppointmentsScreen extends StatefulWidget {
@@ -59,6 +60,57 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
     }
   }
 
+  Future<void> _scanCheckIn() async {
+    final scannedId = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const AppointmentScanScreen()),
+    );
+    if (scannedId == null || !mounted) return;
+
+    final match = _items.where((item) => '${item['id']}' == scannedId);
+    if (match.isEmpty) {
+      showMessage(
+        context,
+        "That code doesn't match any appointment in this list. Refresh and try again.",
+        error: true,
+      );
+      return;
+    }
+    final appointment = match.first;
+    final status = '${appointment['status']}';
+    if (status != 'approved') {
+      showMessage(
+        context,
+        'This appointment is $status, not approved — nothing to check in.',
+        error: true,
+      );
+      return;
+    }
+
+    final patient = appointment['profiles'] as Map<String, dynamic>?;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm check-in'),
+        content: Text(
+          '${patient?['full_name'] ?? 'This resident'} — '
+          '${formatDateTime(appointment['scheduled_at'])}\n\n'
+          'Mark this appointment as completed?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Check in'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _update(scannedId, 'completed');
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _filter == 'all'
@@ -73,10 +125,20 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
               title: 'Appointment management',
               subtitle:
                   'Review resident consultation requests and maintain their status.',
-              action: IconButton(
-                onPressed: _load,
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Refresh',
+              action: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: _scanCheckIn,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    tooltip: 'Scan check-in',
+                  ),
+                  IconButton(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Refresh',
+                  ),
+                ],
               ),
             ),
             SizedBox(

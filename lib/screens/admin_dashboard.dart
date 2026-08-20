@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/analytics_export.dart';
 import '../utils/ui_helpers.dart';
 import '../widgets/analytics_widgets.dart';
 import '../widgets/notifications_panel.dart';
@@ -117,6 +118,43 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const DemoAccessButton(),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.ios_share),
+                      tooltip: 'Export',
+                      onSelected: (format) {
+                        if (format == 'csv') {
+                          exportReportsCsv(context, _reports);
+                        } else {
+                          exportAnalyticsPdf(
+                            context,
+                            totalUsers: _profiles.length,
+                            pendingReports: pending,
+                            verifiedReports: verified,
+                            activeWaste: activeWaste,
+                            statusCounts: statusCounts,
+                            topHotspots: topHotspots,
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'csv',
+                          child: ListTile(
+                            leading: Icon(Icons.table_chart_outlined),
+                            title: Text('Export reports (CSV)'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'pdf',
+                          child: ListTile(
+                            leading: Icon(Icons.picture_as_pdf_outlined),
+                            title: Text('Export summary (PDF)'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
+                    ),
                     IconButton(
                       onPressed: () => openNotificationsPanel(context),
                       icon: const Icon(Icons.notifications_outlined),

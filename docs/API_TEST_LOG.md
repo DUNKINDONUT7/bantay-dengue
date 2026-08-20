@@ -101,6 +101,54 @@ GET https://vyhypddwnsybquzhkcmx.supabase.co/auth/v1/settings
   the Auth service is live and email/password sign-up (used by the app's login/signup screens) is
   enabled.
 
+## 8. Supabase PostgREST — POST `reports`, with a real authenticated session
+
+**Generated:** 2026-08-20, against a fresh throwaway test account signed up for this run
+(`claude.apitest.*@example.com`) — a normal `POST /auth/v1/signup`, no special access.
+
+```
+POST https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports
+Headers: apikey / Authorization: Bearer <real user JWT from signup>
+Body: {"reporter_id":"<user id>","report_type":"breeding_site","description":"...","location_text":"API Test Location"}
+```
+
+- **Status:** `201 Created`
+- **Response:** the full inserted row, including server-assigned `id`, `status: "pending"`,
+  `created_at`/`updated_at` — a genuine authenticated create, not just the negative RLS test above.
+
+## 9. Supabase PostgREST — PATCH `reports`, updating the row just created
+
+```
+PATCH https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports?id=eq.<id>
+Headers: apikey / Authorization: Bearer <same user JWT>
+Body: {"description":"API evidence test report - UPDATED via authenticated PATCH request"}
+```
+
+- **Status:** `200 OK`
+- **Response:** the row with `description` changed to the new value — confirms
+  `DatabaseService.updateReport()`'s underlying PATCH call works end-to-end for an authenticated
+  owner on their own pending report.
+
+## 10. Supabase PostgREST — DELETE `reports`, same authenticated owner, same row
+
+Testing whether a real hard `DELETE` is actually possible, not just unused by the app.
+
+```
+DELETE https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports?id=eq.<id>
+Headers: apikey / Authorization: Bearer <same user JWT>
+```
+
+- **Status:** `200 OK`
+- **Response:** `[]` — **zero rows deleted.** A follow-up `GET` on the same `id` confirms the row
+  is still there (`deleted_at: null`), completely untouched.
+- **Why this matters:** this is not the app choosing not to call `.delete()` — a real, authenticated
+  `DELETE` against the owner's own row is silently blocked at the database layer (no delete grant
+  on `reports`, confirmed live). `deleteReport()` in `database_service.dart` uses a soft delete
+  (`.update({'deleted_at': ...})`) by design, and this test proves that decision is enforced by
+  Postgres itself, not merely by app code choosing not to call the endpoint.
+- Cleanup: the test row was soft-deleted (`deleted_at` set) via an authenticated `PATCH` immediately
+  after, the same way the real app does it — nothing was left behind in the live data.
+
 ---
 
 ## Summary table
@@ -114,11 +162,9 @@ GET https://vyhypddwnsybquzhkcmx.supabase.co/auth/v1/settings
 | 5 | Supabase `reports` (no auth) | GET | 200 | OK — RLS correctly returns nothing |
 | 6 | Supabase `reports` insert (no auth) | POST | 401 | Correctly rejected by RLS |
 | 7 | Supabase Auth settings | GET | 200 | OK — auth service live |
-
-**Update/status-change calls** (`updateReport`, `updateAppointmentStatus`, `updateWasteStatus`,
-etc.) go through the same Supabase PostgREST `.update()` path as the insert calls above and are
-covered by the same RLS policies (`reports_update_staff_only`, `reports_update_own_pending`) —
-see `docs/CRUD_DOCUMENTATION.md` for the full policy list.
+| 8 | Supabase `reports` insert (authenticated) | POST | 201 | Real row created |
+| 9 | Supabase `reports` update (authenticated) | PATCH | 200 | Real row updated |
+| 10 | Supabase `reports` delete (authenticated) | DELETE | 200 | Zero rows affected — hard delete is blocked at the DB layer |
 
 Raw `curl` request/response log: [`api_test_log_raw.txt`](./api_test_log_raw.txt) (same test run,
 unformatted).

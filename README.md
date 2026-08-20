@@ -6,10 +6,10 @@ BantayDengue **v2.3.0** is a responsive Flutter and Supabase community dengue-su
 
 ## Role-based workflows
 
-- **Resident:** submit dengue-case and breeding-site reports with private evidence; view status history; book/cancel appointments; request waste collection; view OpenStreetMap hotspots, advisories, notifications, weather context, and bounded AI guidance; maintain a profile.
-- **Health worker:** review reports and time-limited signed evidence, move reports through verification states, manage appointments, inspect operational metrics, advisories, and hotspot information.
+- **Resident:** submit dengue-case and breeding-site reports with private evidence; view status history; book/cancel appointments and show a QR check-in code for an approved one; request waste collection; view OpenStreetMap hotspots, advisories, notifications, weather context, and bounded AI guidance; maintain a profile with a photo.
+- **Health worker:** review reports and time-limited signed evidence, move reports through verification states, manage appointments and check residents in by scanning their QR code (or entering it manually), inspect operational metrics, advisories, and hotspot information.
 - **Waste Personnel:** use a separate role-authorized operations dashboard and account; prioritize resident waste requests, inspect private evidence, claim/schedule pickup, and mark assigned collection complete.
-- **Administrator:** view system analytics and audit activity, manage user roles/access, and publish announcements.
+- **Administrator:** view system analytics and audit activity, export reports (CSV) and an analytics summary (PDF), manage user roles/access, and publish announcements.
 
 The router fences each area using the role stored in the authenticated Supabase `profiles` row. The Flutter client uses only a browser-safe publishable/anon key; service-role and provider secrets must never be placed in the app.
 

@@ -84,3 +84,36 @@ STATUS CODE: 401
 RESPONSE BODY (truncated to 600 chars):
 {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"reports\""}
 NOTE: Expected/actual denial confirms Row-Level Security (reports_insert_own policy requires an authenticated reporter_id = auth.uid()) is enforced at the database layer, not just in the UI.
+
+==========================================================
+Authenticated CRUD evidence — 2026-08-20 (fresh throwaway test account,
+signed up via POST /auth/v1/signup, no special access)
+==========================================================
+
+----------------------------------------------------------
+TEST: Supabase PostgREST (POST) - insert into reports WITH auth (real create)
+METHOD: POST
+URL: https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports
+STATUS CODE: 201
+RESPONSE BODY:
+[{"id":"01166b0a-ea9a-497f-ba46-836631bffbe4","reporter_id":"6c0bd8e5-c0b6-4144-9dea-eff01d41b2f0","report_type":"breeding_site","description":"API evidence test report (safe to ignore/delete) - created via automated curl test for midterm API documentation","photo_url":null,"latitude":null,"longitude":null,"location_text":"API Test Location","status":"pending","reviewed_by":null,"created_at":"2026-08-20T00:54:38.184034+00:00","updated_at":"2026-08-20T00:54:38.184034+00:00","deleted_at":null}]
+
+----------------------------------------------------------
+TEST: Supabase PostgREST (PATCH) - update the report just created, WITH auth
+METHOD: PATCH
+URL: https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports?id=eq.01166b0a-ea9a-497f-ba46-836631bffbe4
+STATUS CODE: 200
+RESPONSE BODY:
+[{"id":"01166b0a-ea9a-497f-ba46-836631bffbe4", ..., "description":"API evidence test report - UPDATED via authenticated PATCH request", ...}]
+
+----------------------------------------------------------
+TEST: Supabase PostgREST (DELETE) - attempt a real hard delete of the same row, WITH auth, as its owner
+METHOD: DELETE
+URL: https://vyhypddwnsybquzhkcmx.supabase.co/rest/v1/reports?id=eq.01166b0a-ea9a-497f-ba46-836631bffbe4
+STATUS CODE: 200
+RESPONSE BODY:
+[]
+NOTE: Zero rows returned/deleted. Follow-up GET on the same id confirmed the row was untouched
+(deleted_at still null). Proves hard DELETE is blocked at the database layer even for an
+authenticated owner acting on their own row -- not merely unused by the app. Row was then
+soft-deleted (deleted_at set) via authenticated PATCH as cleanup, the same way the real app does it.
