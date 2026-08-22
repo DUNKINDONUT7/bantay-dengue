@@ -14,8 +14,9 @@ Status below was confirmed live on **2026-08-20** by querying the actual project
 | 4 | `RATE_LIMIT_ADDITIONS.sql` | ✅ Applied | Extends the database-enforced rate limit to `appointments` and `waste_requests` |
 | 5 | `AVATAR_STORAGE.sql` | ✅ Applied | Public avatar storage bucket + RLS — confirmed live: `avatars` bucket exists, public, 3 MiB limit |
 | 6 | `APPLY_APPOINTMENTS_FIX.sql` | ✅ Applied | Rebuilds `appointments` — confirmed live: correct columns (`patient_id`, `assigned_doctor`, `scheduled_at`, `reason`, `status`), no leftover NOT NULL contamination. **Do not re-run** — table now holds real bookings |
+| 7 | `fix_profile_insert_policy.sql` | ⚠️ Status not confirmed live — run if not yet applied | Fixes `profiles_insert_own_default_role`: the old policy queried `auth.users` in a subquery, which the `authenticated` role can't read, so it threw `permission denied for table users` and left signed-in users stuck with no profile row. Also backfills a `resident` profile for any existing `auth.users` row missing one. Safe to re-run. |
 
-Everything in the incremental path is applied. Appointment booking and avatar upload are unblocked as of 2026-08-20.
+Steps 1–6 are applied. Step 7 was added after 2026-08-20 and its live status hasn't been re-confirmed against the project — check before assuming it's already run.
 
 ## Standalone / as-needed
 
@@ -36,6 +37,7 @@ supabase/
 ├── RATE_LIMIT_ADDITIONS.sql     Step 4 (applied)
 ├── AVATAR_STORAGE.sql           Step 5 (pending)
 ├── APPLY_APPOINTMENTS_FIX.sql   Step 6 (pending)
+├── fix_profile_insert_policy.sql   Step 7 (status not confirmed live, safe to re-run)
 ├── BantayDengue_Full_Database_v2.3.sql   Fresh-install alternative only
 ├── promote_to_admin.sql         Standalone utility
 ├── functions/                   Edge Functions (assistant-guidance, weather-risk)
