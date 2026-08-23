@@ -18,7 +18,7 @@ The router fences each area using the role stored in the authenticated Supabase 
 - Flutter 3.44.9 / Dart 3.12.2 validated
 - Supabase Auth, PostgreSQL/RLS, Storage, and Edge Functions
 - OpenStreetMap through `flutter_map`
-- Web, Android, and iOS project targets (Windows runner retained from the base repository)
+- Web, Android, and iOS project targets
 
 ## Open and run in VS Code
 
