@@ -50,7 +50,7 @@ class AiService {
     }
 
     final lower = query.toLowerCase();
-    if (_hasDangerSigns(lower)) {
+    if (hasDangerSigns(lower)) {
       return AiReply('$_emergency\n\n$_disclaimer', live: false);
     }
 
@@ -92,7 +92,11 @@ class AiService {
     return AiReply('${_offlineGuidance(lower)}\n\n$_disclaimer', live: false);
   }
 
-  bool _hasDangerSigns(String q) => [
+  /// Same phrase list the AI chat uses to short-circuit straight to the
+  /// emergency message instead of waiting on a model call. Exposed so
+  /// report_form.dart can reuse it verbatim on the case-details field —
+  /// one danger-sign list for the whole app, not two that could drift.
+  bool hasDangerSigns(String q) => [
     'bleeding',
     'blood in vomit',
     'black stool',

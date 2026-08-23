@@ -57,4 +57,109 @@ class GeocodingService {
       return null;
     }
   }
+
+  /// Just the barangay-equivalent component (Nominatim has no "barangay"
+  /// field for the Philippines — suburb/village/neighbourhood is the
+  /// closest match in OSM's addressing scheme) — for auto-filling a
+  /// resident's profile `barangay` field from their current location,
+  /// separate from [reverseGeocode]'s full "road, suburb, city" display
+  /// string used elsewhere for a report's location text.
+  Future<String?> reverseGeocodeBarangay({
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'lat': '$latitude',
+        'lon': '$longitude',
+        'format': 'jsonv2',
+        'zoom': '18',
+        'addressdetails': '1',
+      });
+      final response = await http
+          .get(uri, headers: {'User-Agent': 'com.bantaydengue.app'})
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode != 200) return null;
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final address = body['address'] as Map<String, dynamic>?;
+      final barangay =
+          address?['suburb'] ?? address?['village'] ?? address?['neighbourhood'];
+      return barangay is String && barangay.trim().isNotEmpty
+          ? barangay.trim()
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Forward geocoding: turns a typed address/landmark query into ranked
+  /// candidate points, so a resident can search instead of hunting for a pin
+  /// by hand. Biased to the Philippines since every report in this system is
+  /// local. Best-effort: an empty list on any failure, never throws — the
+  /// caller (the map picker) just shows "no matches" rather than crashing.
+  Future<List<GeocodeSuggestion>> searchAddress(
+    String query, {
+    int limit = 5,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.length < 3) return const [];
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': trimmed,
+        'format': 'jsonv2',
+        'addressdetails': '1',
+        'limit': '$limit',
+        'countrycodes': 'ph',
+      });
+      final response = await http
+          .get(uri, headers: {'User-Agent': 'com.bantaydengue.app'})
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode != 200) return const [];
+
+      final body = jsonDecode(response.body) as List<dynamic>;
+      return body
+          .whereType<Map<String, dynamic>>()
+          .map((row) {
+            final lat = double.tryParse('${row['lat']}');
+            final lon = double.tryParse('${row['lon']}');
+            final name = row['display_name'] as String?;
+            if (lat == null || lon == null || name == null) return null;
+            final address = row['address'] as Map<String, dynamic>?;
+            final barangay =
+                address?['suburb'] ??
+                address?['village'] ??
+                address?['neighbourhood'];
+            return GeocodeSuggestion(
+              displayName: name,
+              latitude: lat,
+              longitude: lon,
+              barangay: barangay is String && barangay.trim().isNotEmpty
+                  ? barangay.trim()
+                  : null,
+            );
+          })
+          .whereType<GeocodeSuggestion>()
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+}
+
+class GeocodeSuggestion {
+  final String displayName;
+  final double latitude;
+  final double longitude;
+  // Nominatim's suburb/village/neighbourhood — the closest OSM equivalent
+  // to a Philippine barangay. Was previously discarded even though the API
+  // already returns it (addressdetails=1 is already set on this request).
+  final String? barangay;
+
+  const GeocodeSuggestion({
+    required this.displayName,
+    required this.latitude,
+    required this.longitude,
+    this.barangay,
+  });
 }

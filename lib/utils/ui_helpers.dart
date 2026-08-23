@@ -1,6 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_theme.dart';
+
+/// Drops a pin at [latitude]/[longitude] in the device's default maps app
+/// (or a browser tab if none is installed) — for looking a spot up, not
+/// driving to it. Use [openNavigationTo] when the goal is turn-by-turn
+/// directions instead.
+Future<void> openLocationInMaps(num latitude, num longitude) async {
+  final uri = Uri.parse(
+    'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude',
+  );
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+/// Hands off turn-by-turn driving directions to [latitude]/[longitude] to
+/// whichever navigation app the device offers (Google Maps, Waze, Apple
+/// Maps, ...) — this app has no routing engine of its own, so real
+/// navigation always lives one tap away in a dedicated app instead of being
+/// half-reimplemented here.
+Future<void> openNavigationTo(num latitude, num longitude) async {
+  final uri = Uri.parse(
+    'https://www.google.com/maps/dir/?api=1&destination=$latitude,$longitude&travelmode=driving',
+  );
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
 
 String humanize(String? value) {
   if (value == null || value.isEmpty) return 'Not specified';

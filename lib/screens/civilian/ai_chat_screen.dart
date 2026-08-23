@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../services/ai_service.dart';
 import '../../theme/app_theme.dart';
@@ -81,11 +82,36 @@ class _AiChatScreenState extends State<AiChatScreen> with SubmitThrottle {
             ),
             Container(
               width: double.infinity,
-              color: Theme.of(context).colorScheme.errorContainer,
+              color: AppColors.danger.withValues(alpha: 0.08),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: const Text(
-                'Emergency: severe pain, persistent vomiting, bleeding, breathing difficulty, confusion, cold/clammy skin, or little urine → call 911 or seek urgent care.',
-                textAlign: TextAlign.center,
+              child: Column(
+                children: [
+                  const Text(
+                    'Emergency: severe pain, persistent vomiting, bleeding, breathing difficulty, confusion, cold/clammy skin, or little urine → call 911 or seek urgent care.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => context.go('/civilian/report/case'),
+                        icon: const Icon(
+                          Icons.medical_information_outlined,
+                          size: 16,
+                        ),
+                        label: const Text('Report a case'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => context.go('/civilian/appointments'),
+                        icon: const Icon(Icons.event_outlined, size: 16),
+                        label: const Text('My appointments'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
             SizedBox(
@@ -138,10 +164,8 @@ class _AiChatScreenState extends State<AiChatScreen> with SubmitThrottle {
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         color: message.user
-                            ? Theme.of(context).colorScheme.primaryContainer
-                            : Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
+                            ? AppColors.primaryGlow
+                            : AppColors.surfaceElevated,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(

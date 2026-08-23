@@ -6,7 +6,6 @@ import '../theme/app_theme.dart';
 import '../utils/analytics_export.dart';
 import '../utils/ui_helpers.dart';
 import '../widgets/analytics_widgets.dart';
-import '../widgets/notifications_panel.dart';
 import '../widgets/section_header.dart';
 import '../widgets/shared_widgets.dart';
 
@@ -23,6 +22,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   List<Map<String, dynamic>> _activity = [];
   List<Map<String, dynamic>> _waste = [];
   List<Map<String, dynamic>> _hotspots = [];
+  List<Map<String, dynamic>> _appointments = [];
   Object? _error;
   bool _loading = true;
 
@@ -44,17 +44,37 @@ class _AdminDashboardState extends State<AdminDashboard> {
         DatabaseService.instance.fetchSystemActivity(),
         DatabaseService.instance.fetchWasteRequests(),
         DatabaseService.instance.fetchHotspots(),
+        DatabaseService.instance.fetchAppointments(),
       ]);
       _profiles = values[0];
       _reports = values[1];
       _activity = values[2];
       _waste = values[3];
       _hotspots = values[4];
+      _appointments = values[5];
     } catch (error) {
       _error = error;
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Renders the `details` jsonb payload already fetched on every
+  /// system_activity row but never shown before. The status-change trigger
+  /// (capture_status_change in BantayDengue_FINAL.sql) always writes
+  /// old_status/new_status, so that's rendered specially; anything else
+  /// (or a future trigger with a different shape) falls back to a compact
+  /// key:value join instead of being silently dropped.
+  String? _activityDetail(dynamic raw) {
+    if (raw is! Map) return null;
+    final details = Map<String, dynamic>.from(raw);
+    if (details.isEmpty) return null;
+    final oldStatus = details['old_status'];
+    final newStatus = details['new_status'];
+    if (oldStatus != null && newStatus != null) {
+      return '${humanize('$oldStatus')} → ${humanize('$newStatus')}';
+    }
+    return details.entries.map((e) => '${e.key}: ${e.value}').join(', ');
   }
 
   @override
@@ -117,31 +137,61 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 action: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const DemoAccessButton(),
                     PopupMenuButton<String>(
                       icon: const Icon(Icons.ios_share),
                       tooltip: 'Export',
                       onSelected: (format) {
-                        if (format == 'csv') {
-                          exportReportsCsv(context, _reports);
-                        } else {
-                          exportAnalyticsPdf(
-                            context,
-                            totalUsers: _profiles.length,
-                            pendingReports: pending,
-                            verifiedReports: verified,
-                            activeWaste: activeWaste,
-                            statusCounts: statusCounts,
-                            topHotspots: topHotspots,
-                          );
+                        switch (format) {
+                          case 'csv_reports':
+                            exportReportsCsv(context, _reports);
+                          case 'csv_users':
+                            exportUsersCsv(context, _profiles);
+                          case 'csv_waste':
+                            exportWasteCsv(context, _waste);
+                          case 'csv_appointments':
+                            exportAppointmentsCsv(context, _appointments);
+                          case 'pdf':
+                            exportAnalyticsPdf(
+                              context,
+                              totalUsers: _profiles.length,
+                              pendingReports: pending,
+                              verifiedReports: verified,
+                              activeWaste: activeWaste,
+                              statusCounts: statusCounts,
+                              topHotspots: topHotspots,
+                            );
                         }
                       },
                       itemBuilder: (context) => const [
                         PopupMenuItem(
-                          value: 'csv',
+                          value: 'csv_reports',
                           child: ListTile(
                             leading: Icon(Icons.table_chart_outlined),
                             title: Text('Export reports (CSV)'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'csv_users',
+                          child: ListTile(
+                            leading: Icon(Icons.people_outline),
+                            title: Text('Export users (CSV)'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'csv_waste',
+                          child: ListTile(
+                            leading: Icon(Icons.delete_sweep_outlined),
+                            title: Text('Export waste requests (CSV)'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'csv_appointments',
+                          child: ListTile(
+                            leading: Icon(Icons.event_outlined),
+                            title: Text('Export appointments (CSV)'),
                             contentPadding: EdgeInsets.zero,
                           ),
                         ),
@@ -154,11 +204,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ),
                         ),
                       ],
-                    ),
-                    IconButton(
-                      onPressed: () => openNotificationsPanel(context),
-                      icon: const Icon(Icons.notifications_outlined),
-                      tooltip: 'Notifications',
                     ),
                     IconButton(
                       onPressed: _load,
@@ -343,8 +388,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
               else
                 ..._activity
                     .take(10)
-                    .map(
-                      (item) => Card(
+                    .map((item) {
+                      final detail = _activityDetail(item['details']);
+                      return Card(
                         margin: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 4,
@@ -354,10 +400,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             child: Icon(Icons.history),
                           ),
                           title: Text(humanize(item['action'] as String?)),
-                          subtitle: Text(formatDateTime(item['created_at'])),
+                          subtitle: Text(
+                            detail == null
+                                ? formatDateTime(item['created_at'])
+                                : '${formatDateTime(item['created_at'])}\n$detail',
+                          ),
+                          isThreeLine: detail != null,
                         ),
-                      ),
-                    ),
+                      );
+                    }),
             ],
           ),
         ),

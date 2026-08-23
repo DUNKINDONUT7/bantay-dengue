@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
@@ -113,8 +114,11 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = authService.currentUser?.id;
     final filtered = _filter == 'all'
         ? _items
+        : _filter == 'mine'
+        ? _items.where((item) => item['assigned_doctor'] == currentUserId).toList()
         : _items.where((item) => item['status'] == _filter).toList();
     return Scaffold(
       body: SafeArea(
@@ -149,6 +153,7 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                 children: [
                   for (final value in const [
                     'all',
+                    'mine',
                     'pending',
                     'approved',
                     'completed',
@@ -185,6 +190,9 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                       final status = '${item['status']}';
                       final id = '${item['id']}';
                       final busy = _busyIds.contains(id);
+                      final assignedDoctor = item['assigned_doctor'] as String?;
+                      final assignedToMe = assignedDoctor != null &&
+                          assignedDoctor == currentUserId;
                       return Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -219,6 +227,42 @@ class _StaffAppointmentsScreenState extends State<StaffAppointmentsScreen> {
                               ),
                               const SizedBox(height: 12),
                               Text('${item['reason'] ?? 'No reason supplied'}'),
+                              if (assignedDoctor != null) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(
+                                      AppRadius.sm,
+                                    ),
+                                    border: Border.all(
+                                      color: Theme.of(context).colorScheme.outline,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        assignedToMe
+                                            ? Icons.person_pin_circle_outlined
+                                            : Icons.assignment_ind_outlined,
+                                        size: 14,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        assignedToMe ? 'Assigned to you' : 'Assigned',
+                                        style: const TextStyle(fontSize: 10.5),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                               if (status == 'pending') ...[
                                 const SizedBox(height: 12),
                                 Wrap(

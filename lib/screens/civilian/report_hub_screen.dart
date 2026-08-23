@@ -44,8 +44,9 @@ class _ReportHubScreenState extends State<ReportHubScreen> {
     final wide = MediaQuery.sizeOf(context).width >= 700;
     final actions = [
       _ActionCard(
-        title: 'Suspected dengue case',
-        message: 'Share symptoms and location for health-center assessment.',
+        title: 'Report a dengue case',
+        message:
+            'Self-report symptoms, or flag someone else\'s, for health-center assessment.',
         icon: Icons.medical_information_outlined,
         color: Theme.of(context).colorScheme.error,
         onTap: () => context.go('/civilian/report/case'),

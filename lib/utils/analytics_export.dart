@@ -10,15 +10,49 @@ import 'package:share_plus/share_plus.dart';
 
 import 'ui_helpers.dart';
 
-/// Exports the current reports list as a CSV file via the platform share
-/// sheet — works the same way on web, Android, and iOS because the bytes
-/// are handed over in memory (no filesystem/path_provider dependency).
+/// Shared CSV-encode-and-share machinery — works the same way on web,
+/// Android, and iOS because the bytes are handed over in memory (no
+/// filesystem/path_provider dependency). Every `export*Csv` function below
+/// only differs in what columns/rows it builds; this is the one place that
+/// actually encodes and opens the share sheet.
+Future<void> _shareCsv(
+  BuildContext context, {
+  required String filenamePrefix,
+  required String subject,
+  required List<List<dynamic>> rows,
+}) async {
+  try {
+    final csvText = Csv().encode(rows);
+    final bytes = Uint8List.fromList(utf8.encode(csvText));
+    final stamp = DateTime.now().toIso8601String().split('T').first;
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [
+          XFile.fromData(
+            bytes,
+            name: '${filenamePrefix}_$stamp.csv',
+            mimeType: 'text/csv',
+          ),
+        ],
+        subject: subject,
+      ),
+    );
+  } catch (error) {
+    if (context.mounted) {
+      showMessage(context, 'Unable to export CSV: $error', error: true);
+    }
+  }
+}
+
 Future<void> exportReportsCsv(
   BuildContext context,
   List<Map<String, dynamic>> reports,
-) async {
-  try {
-    final rows = <List<dynamic>>[
+) {
+  return _shareCsv(
+    context,
+    filenamePrefix: 'bantaydengue_reports',
+    subject: 'BantayDengue reports export',
+    rows: [
       ['Report ID', 'Type', 'Status', 'Location', 'Reported at'],
       for (final r in reports)
         [
@@ -28,27 +62,83 @@ Future<void> exportReportsCsv(
           r['location_text'] ?? '',
           formatDateTime(r['created_at']),
         ],
-    ];
-    final csvText = Csv().encode(rows);
-    final bytes = Uint8List.fromList(utf8.encode(csvText));
-    final stamp = DateTime.now().toIso8601String().split('T').first;
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [
-          XFile.fromData(
-            bytes,
-            name: 'bantaydengue_reports_$stamp.csv',
-            mimeType: 'text/csv',
-          ),
+    ],
+  );
+}
+
+Future<void> exportUsersCsv(
+  BuildContext context,
+  List<Map<String, dynamic>> users,
+) {
+  return _shareCsv(
+    context,
+    filenamePrefix: 'bantaydengue_users',
+    subject: 'BantayDengue user directory export',
+    rows: [
+      ['Full name', 'Email', 'Role', 'Barangay', 'Active', 'Joined'],
+      for (final u in users)
+        [
+          u['full_name'] ?? '',
+          u['email'] ?? '',
+          humanize(u['role'] as String?),
+          u['barangay'] ?? '',
+          (u['is_active'] as bool? ?? true) ? 'Yes' : 'No',
+          formatDateTime(u['created_at']),
         ],
-        subject: 'BantayDengue reports export',
-      ),
-    );
-  } catch (error) {
-    if (context.mounted) {
-      showMessage(context, 'Unable to export CSV: $error', error: true);
-    }
-  }
+    ],
+  );
+}
+
+Future<void> exportWasteCsv(
+  BuildContext context,
+  List<Map<String, dynamic>> requests,
+) {
+  return _shareCsv(
+    context,
+    filenamePrefix: 'bantaydengue_waste_requests',
+    subject: 'BantayDengue waste requests export',
+    rows: [
+      [
+        'Request ID',
+        'Location',
+        'Status',
+        'Requested by',
+        'Preferred date',
+        'Requested at',
+      ],
+      for (final w in requests)
+        [
+          w['id'],
+          w['location_text'] ?? '',
+          humanize(w['status'] as String?),
+          (w['profiles'] as Map<String, dynamic>?)?['full_name'] ?? '',
+          formatDateTime(w['scheduled_at']),
+          formatDateTime(w['created_at']),
+        ],
+    ],
+  );
+}
+
+Future<void> exportAppointmentsCsv(
+  BuildContext context,
+  List<Map<String, dynamic>> appointments,
+) {
+  return _shareCsv(
+    context,
+    filenamePrefix: 'bantaydengue_appointments',
+    subject: 'BantayDengue appointments export',
+    rows: [
+      ['Appointment ID', 'Patient', 'Status', 'Scheduled at', 'Reason'],
+      for (final a in appointments)
+        [
+          a['id'],
+          (a['profiles'] as Map<String, dynamic>?)?['full_name'] ?? '',
+          humanize(a['status'] as String?),
+          formatDateTime(a['scheduled_at']),
+          a['reason'] ?? '',
+        ],
+    ],
+  );
 }
 
 /// Builds and opens the platform print/save dialog for a one-page PDF

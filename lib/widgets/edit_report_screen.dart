@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../services/database_service.dart';
 import '../services/image_picker_stub.dart';
-import '../services/location_helper.dart';
 import '../utils/ui_helpers.dart';
+import 'location_picker_field.dart';
 import 'section_header.dart';
 
 /// Lets a resident edit a report they filed themselves. Only ever shown for
@@ -29,7 +29,6 @@ class _EditReportScreenState extends State<EditReportScreen> {
   late final TextEditingController _longitude;
   Uint8List? _newPhoto;
   bool _saving = false;
-  bool _locating = false;
 
   @override
   void initState() {
@@ -56,26 +55,21 @@ class _EditReportScreenState extends State<EditReportScreen> {
     super.dispose();
   }
 
-  Future<void> _useCurrentLocation() async {
-    setState(() => _locating = true);
-    try {
-      final loc = await LocationHelper.getCurrentLocation();
-      _latitude.text = loc.latitude.toStringAsFixed(6);
-      _longitude.text = loc.longitude.toStringAsFixed(6);
-      if (mounted) setState(() {});
-    } on LocationFailure catch (failure) {
-      if (!mounted) return;
-      final message = switch (failure.reason) {
-        LocationFailureReason.permissionDenied =>
-          'Location permission was denied.',
-        LocationFailureReason.serviceDisabled =>
-          'Turn on location services first.',
-        LocationFailureReason.other => "Couldn't get your location.",
-      };
-      showMessage(context, message, error: true);
-    } finally {
-      if (mounted) setState(() => _locating = false);
-    }
+  void _onLocationPicked(LocationPickResult result) {
+    setState(() {
+      _latitude.text = result.latitude.toStringAsFixed(6);
+      _longitude.text = result.longitude.toStringAsFixed(6);
+      if (result.address != null && _location.text.trim().isEmpty) {
+        _location.text = result.address!;
+      }
+    });
+  }
+
+  void _onLocationCleared() {
+    setState(() {
+      _latitude.clear();
+      _longitude.clear();
+    });
   }
 
   Future<void> _save() async {
@@ -98,13 +92,6 @@ class _EditReportScreenState extends State<EditReportScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  String? _coordinateValidator(String? value) {
-    if (value == null || value.trim().isEmpty) return null;
-    return double.tryParse(value.trim()) == null
-        ? 'Enter a valid number.'
-        : null;
   }
 
   @override
@@ -164,61 +151,16 @@ class _EditReportScreenState extends State<EditReportScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Coordinates (optional)',
+                            'Exact location',
                             style: Theme.of(context).textTheme.titleSmall,
                           ),
                           const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed: _saving || _locating
-                                ? null
-                                : _useCurrentLocation,
-                            icon: _locating
-                                ? const SizedBox.square(
-                                    dimension: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.my_location_outlined),
-                            label: Text(
-                              _locating
-                                  ? 'Getting your location…'
-                                  : 'Use my current location',
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _latitude,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                        signed: true,
-                                      ),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Latitude',
-                                  ),
-                                  validator: _coordinateValidator,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _longitude,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                        signed: true,
-                                      ),
-                                  decoration: const InputDecoration(
-                                    labelText: 'Longitude',
-                                  ),
-                                  validator: _coordinateValidator,
-                                ),
-                              ),
-                            ],
+                          LocationPickerField(
+                            latitude: double.tryParse(_latitude.text.trim()),
+                            longitude: double.tryParse(_longitude.text.trim()),
+                            enabled: !_saving,
+                            onChanged: _onLocationPicked,
+                            onCleared: _onLocationCleared,
                           ),
                           const SizedBox(height: 16),
                           OutlinedButton.icon(

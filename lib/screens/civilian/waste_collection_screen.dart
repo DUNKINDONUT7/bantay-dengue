@@ -1,7 +1,10 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../services/database_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/ui_helpers.dart';
 import '../../widgets/section_header.dart';
 
@@ -52,6 +55,113 @@ class _WasteCollectionScreenState extends State<WasteCollectionScreen> {
     }
   }
 
+  /// [pathKey] picks which photo to show: the resident's own submitted
+  /// evidence (`photo_url`) or the waste personnel's proof of pickup
+  /// (`completion_photo_url`) — both already round-trip through
+  /// fetchWasteRequests, just never rendered back to the resident before.
+  Future<void> _viewPhoto(
+    Map<String, dynamic> item, {
+    required String pathKey,
+    required String title,
+    required String emptyMessage,
+  }) async {
+    final path = item[pathKey] as String?;
+    final signedUrl = await DatabaseService.instance.createEvidenceUrl(
+      bucket: 'waste-evidence',
+      path: path,
+    );
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: 32,
+        ),
+        child: SizedBox(
+          width: min(520, MediaQuery.sizeOf(context).width - 48),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Close',
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                child: signedUrl == null
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Text(
+                          path == null
+                              ? emptyMessage
+                              : 'The private preview could not be created. Try again shortly.',
+                          style: const TextStyle(color: AppColors.textMuted),
+                        ),
+                      )
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        child: Container(
+                          color: AppColors.surfaceElevated,
+                          constraints: const BoxConstraints(
+                            maxHeight: 420,
+                            minHeight: 160,
+                          ),
+                          child: InteractiveViewer(
+                            minScale: 1,
+                            maxScale: 4,
+                            child: Image.network(
+                              signedUrl,
+                              width: double.infinity,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return const SizedBox(
+                                  height: 220,
+                                  child: Center(
+                                    child: SizedBox.square(
+                                      dimension: 26,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.4,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (_, _, _) => const SizedBox(
+                                height: 160,
+                                child: Center(
+                                  child: Text('Photo could not be displayed.'),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -92,30 +202,131 @@ class _WasteCollectionScreenState extends State<WasteCollectionScreen> {
                     itemBuilder: (context, index) {
                       final item = _items[index];
                       final canCancel = item['status'] == 'pending';
+                      final collected = item['status'] == 'collected';
+                      final assigned = item['handled_by'] != null;
                       return Card(
-                        child: ListTile(
-                          leading: const CircleAvatar(
-                            child: Icon(Icons.delete_sweep_outlined),
-                          ),
-                          title: Text(
-                            '${item['location_text'] ?? 'Pickup request'}',
-                          ),
-                          subtitle: Text(
-                            '${item['description'] ?? ''}\nPreferred ${formatDateTime(item['scheduled_at'])}',
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          isThreeLine: true,
-                          trailing: Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              StatusChip('${item['status'] ?? 'pending'}'),
-                              if (canCancel)
-                                IconButton(
-                                  onPressed: () => _cancel('${item['id']}'),
-                                  icon: const Icon(Icons.cancel_outlined),
-                                  tooltip: 'Cancel request',
+                              ListTile(
+                                isThreeLine: true,
+                                leading: const CircleAvatar(
+                                  backgroundColor: AppColors.surfaceElevated,
+                                  child: Icon(
+                                    Icons.delete_sweep_outlined,
+                                    color: AppColors.textPrimary,
+                                  ),
                                 ),
+                                title: Text(
+                                  '${item['location_text'] ?? 'Pickup request'}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${item['description'] ?? ''}\nPreferred ${formatDateTime(item['scheduled_at'])}',
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: StatusChip(
+                                  '${item['status'] ?? 'pending'}',
+                                ),
+                              ),
+                              if (assigned)
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(12, 0, 12, 4),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.assignment_ind_outlined,
+                                        size: 14,
+                                        color: AppColors.textMuted,
+                                      ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Waste personnel assigned',
+                                        style: TextStyle(
+                                          color: AppColors.textMuted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  8,
+                                ),
+                                child: Wrap(
+                                  alignment: WrapAlignment.end,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () => _viewPhoto(
+                                        item,
+                                        pathKey: 'photo_url',
+                                        title: 'Your submitted evidence',
+                                        emptyMessage:
+                                            'No photo evidence was attached to this request.',
+                                      ),
+                                      icon: const Icon(
+                                        Icons.visibility_outlined,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        item['photo_url'] == null
+                                            ? 'No evidence'
+                                            : 'View evidence',
+                                      ),
+                                    ),
+                                    if (collected)
+                                      TextButton.icon(
+                                        onPressed: () => _viewPhoto(
+                                          item,
+                                          pathKey: 'completion_photo_url',
+                                          title: 'Proof of collection',
+                                          emptyMessage:
+                                              'Waste personnel did not attach a completion photo.',
+                                        ),
+                                        icon: const Icon(
+                                          Icons.task_alt_outlined,
+                                          size: 18,
+                                        ),
+                                        label: Text(
+                                          item['completion_photo_url'] == null
+                                              ? 'No completion photo'
+                                              : 'View proof of collection',
+                                        ),
+                                      ),
+                                    if (canCancel)
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            _cancel('${item['id']}'),
+                                        icon: Icon(
+                                          Icons.cancel_outlined,
+                                          size: 18,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                        ),
+                                        label: Text(
+                                          'Cancel',
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),

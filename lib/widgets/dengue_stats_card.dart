@@ -176,6 +176,13 @@ class _WeeklyStatsSection extends StatelessWidget {
     required this.onRefresh,
   });
 
+  double? _ratePer100k(DengueStat stat) {
+    final population = stat.population;
+    final cases = stat.cases;
+    if (population == null || population <= 0 || cases == null) return null;
+    return (cases / population) * 100000;
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<DengueStat>>(
@@ -301,6 +308,21 @@ class _WeeklyStatsSection extends StatelessWidget {
                           fontSize: 11,
                         ),
                       ),
+                      // Raw case counts aren't comparable across the country
+                      // picker above — Brazil's population is ~2x the
+                      // Philippines', so a normalized rate is the only
+                      // reading that's actually apples-to-apples.
+                      if (_ratePer100k(latest) case final rate?)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '≈${rate.toStringAsFixed(1)} per 100k population',
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

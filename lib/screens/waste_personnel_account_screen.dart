@@ -5,9 +5,11 @@ import 'package:go_router/go_router.dart';
 
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
 import '../widgets/notifications_panel.dart';
 import '../widgets/section_header.dart';
+import '../widgets/shared_widgets.dart';
 
 /// Dedicated account workspace for the waste-personnel role.
 ///
@@ -24,6 +26,36 @@ class WastePersonnelAccountScreen extends StatefulWidget {
 class _WastePersonnelAccountScreenState
     extends State<WastePersonnelAccountScreen> {
   bool _saving = false;
+  bool _loadingStats = true;
+  int _completedCount = 0;
+  int _inProgressCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  /// Personal turnaround stats — filters the same `waste_requests` staff
+  /// already see via RLS down to rows this account is `handled_by`, rather
+  /// than adding a new query. No pagination on fetchWasteRequests() yet
+  /// (see supabase/README.md's known scaling note), so this is exact today
+  /// and would need revisiting alongside that.
+  Future<void> _loadStats() async {
+    setState(() => _loadingStats = true);
+    try {
+      final requests = await DatabaseService.instance.fetchWasteRequests();
+      final userId = authService.currentUser?.id;
+      final mine = requests.where((r) => r['handled_by'] == userId);
+      _completedCount = mine.where((r) => r['status'] == 'collected').length;
+      _inProgressCount = mine.where((r) => r['status'] == 'scheduled').length;
+    } catch (_) {
+      // Best-effort personal stats — leave at 0 rather than show an error
+      // banner on what's otherwise a working account screen.
+    } finally {
+      if (mounted) setState(() => _loadingStats = false);
+    }
+  }
 
   Future<void> _editProfile() async {
     final user = authService.currentUser;
@@ -189,7 +221,10 @@ class _WastePersonnelAccountScreenState
                                               : TextAlign.start,
                                         ),
                                         const SizedBox(height: 10),
-                                        const _RoleBadge(),
+                                        const StatusPill(
+                                          label: 'WASTE PERSONNEL',
+                                          color: AppColors.info,
+                                        ),
                                       ],
                                     );
                                     if (compact) {
@@ -225,6 +260,34 @@ class _WastePersonnelAccountScreenState
                                       ],
                                     );
                                   },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: _StatItem(
+                                        value: _completedCount,
+                                        label: 'Collected',
+                                        loading: _loadingStats,
+                                      ),
+                                    ),
+                                    const SizedBox(
+                                      height: 30,
+                                      child: VerticalDivider(width: 1),
+                                    ),
+                                    Expanded(
+                                      child: _StatItem(
+                                        value: _inProgressCount,
+                                        label: 'In progress',
+                                        loading: _loadingStats,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -320,26 +383,39 @@ class _WastePersonnelAccountScreenState
   }
 }
 
-class _RoleBadge extends StatelessWidget {
-  const _RoleBadge();
+class _StatItem extends StatelessWidget {
+  final int value;
+  final String label;
+  final bool loading;
+
+  const _StatItem({
+    required this.value,
+    required this.label,
+    required this.loading,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Theme.of(context).colorScheme.outline),
-      ),
-      child: const Text(
-        'WASTE PERSONNEL',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        loading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text('$value', style: AppTypography.statNumber(context, size: 20)),
+        const SizedBox(height: 3),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-      ),
+      ],
     );
   }
 }

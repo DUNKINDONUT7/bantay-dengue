@@ -452,6 +452,121 @@ class AnalyticsPanel extends StatelessWidget {
   }
 }
 
+/// Week-over-week line chart — e.g. verified case counts per week. The app
+/// already shows a WHO *global* trend line (dengue_stats_card.dart); this is
+/// the same idea for the app's own local data, which existed all along in
+/// `reports`/`created_at` but had no chart, only point-in-time counts.
+/// [counts] and [labels] must be the same length, oldest first — the caller
+/// buckets real fetched rows into them, this widget never fabricates a trend.
+class WeeklyTrendChart extends StatelessWidget {
+  final List<int> counts;
+  final List<String> labels;
+  final Color color;
+
+  const WeeklyTrendChart({
+    super.key,
+    required this.counts,
+    required this.labels,
+    this.color = AppColors.danger,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (counts.isEmpty || counts.every((c) => c == 0)) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Text(
+          'No verified cases in this window yet.',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+        ),
+      );
+    }
+    final maxCount = counts.reduce((a, b) => a > b ? a : b);
+    // Show at most ~6 labels regardless of window length so they don't
+    // overlap — every Nth week rather than every single one.
+    final labelStep = (labels.length / 6).ceil().clamp(1, labels.length);
+
+    return SizedBox(
+      height: 140,
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          maxY: (maxCount == 0 ? 1 : maxCount) * 1.25,
+          gridData: const FlGridData(show: false),
+          borderData: FlBorderData(show: false),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (_) => AppColors.ink,
+              getTooltipItems: (spots) => spots.map((s) {
+                final index = s.x.toInt();
+                final label = index >= 0 && index < labels.length
+                    ? labels[index]
+                    : '';
+                return LineTooltipItem(
+                  '${s.y.toInt()} · $label',
+                  const TextStyle(color: Colors.white, fontSize: 11),
+                );
+              }).toList(),
+            ),
+          ),
+          titlesData: FlTitlesData(
+            leftTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 22,
+                interval: 1,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index < 0 ||
+                      index >= labels.length ||
+                      index % labelStep != 0) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      labels[index],
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: [
+                for (var i = 0; i < counts.length; i++)
+                  FlSpot(i.toDouble(), counts[i].toDouble()),
+              ],
+              isCurved: true,
+              color: color,
+              barWidth: 2.5,
+              dotData: const FlDotData(show: true),
+              belowBarData: BarAreaData(
+                show: true,
+                color: color.withValues(alpha: 0.12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Weather-derived mosquito breeding-condition indicator, with a 7-day
 /// rainfall mini chart. Reused by the civilian dashboard and the hotspot
 /// map screen — both already fetch a [WeatherRisk] from WeatherService.
@@ -459,12 +574,14 @@ class WeatherBreedingCard extends StatelessWidget {
   final String label;
   final String summary;
   final List<double> dailyRainMm;
+  final double? temperatureC;
 
   const WeatherBreedingCard({
     super.key,
     required this.label,
     required this.summary,
     this.dailyRainMm = const [],
+    this.temperatureC,
   });
 
   Color get _color {
@@ -531,6 +648,17 @@ class WeatherBreedingCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (!unavailable && temperatureC != null) ...[
+                Text(
+                  '${temperatureC!.round()}°C',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               if (!unavailable)
                 Container(
                   width: 8,

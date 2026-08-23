@@ -17,12 +17,19 @@ class NavItem {
   final IconData icon;
   final IconData activeIcon;
   final String path;
+  // Web sidebar only — groups items under a small header (e.g. "MAIN",
+  // "SERVICES", "ACCOUNT") instead of one long undifferentiated list. Null
+  // means "don't group this list" (tablet rail/mobile ignore it entirely;
+  // they use Material's own NavigationRail/BottomNavigationBar, which are
+  // already internally consistent).
+  final String? group;
 
   const NavItem({
     required this.label,
     required this.icon,
     required this.activeIcon,
     required this.path,
+    this.group,
   });
 }
 
@@ -34,52 +41,67 @@ const List<NavItem> civilianNavItems = [
     icon: Icons.home_outlined,
     activeIcon: Icons.home,
     path: '/civilian/home',
+    group: 'MAIN',
   ),
   NavItem(
     label: 'Report',
     icon: Icons.report_outlined,
     activeIcon: Icons.report,
     path: '/civilian/report',
+    group: 'MAIN',
   ),
   NavItem(
     label: 'Assistant',
     icon: Icons.smart_toy_outlined,
     activeIcon: Icons.smart_toy,
     path: '/civilian/assistant',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Appointments',
     icon: Icons.calendar_month_outlined,
     activeIcon: Icons.calendar_month,
     path: '/civilian/appointments',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Profile',
     icon: Icons.person_outlined,
     activeIcon: Icons.person,
     path: '/civilian/profile',
+    group: 'ACCOUNT',
   ),
 ];
 
 // Extra destinations only shown on the wider web/tablet sidebar for civilians.
 const List<NavItem> civilianExtraNavItems = [
   NavItem(
+    label: 'Community',
+    icon: Icons.favorite_border,
+    activeIcon: Icons.favorite,
+    path: '/civilian/community',
+    group: 'MAIN',
+  ),
+  NavItem(
     label: 'Hotspots',
     icon: Icons.map_outlined,
     activeIcon: Icons.map,
     path: '/civilian/map',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Waste',
     icon: Icons.delete_outline,
     activeIcon: Icons.delete,
     path: '/civilian/waste',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Advisories',
     icon: Icons.campaign_outlined,
     activeIcon: Icons.campaign,
     path: '/civilian/advisories',
+    group: 'SERVICES',
   ),
 ];
 
@@ -89,45 +111,45 @@ const List<NavItem> doctorNavItems = [
     icon: Icons.dashboard_outlined,
     activeIcon: Icons.dashboard,
     path: '/doctor',
+    group: 'MAIN',
   ),
   NavItem(
     label: 'Verify',
     icon: Icons.fact_check_outlined,
     activeIcon: Icons.fact_check,
     path: '/doctor/verification',
+    group: 'MAIN',
   ),
   NavItem(
     label: 'Appointments',
     icon: Icons.calendar_month_outlined,
     activeIcon: Icons.calendar_month,
     path: '/doctor/appointments',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Hotspots',
     icon: Icons.map_outlined,
     activeIcon: Icons.map,
     path: '/doctor/hotspots',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Profile',
     icon: Icons.person_outlined,
     activeIcon: Icons.person,
     path: '/doctor/profile',
+    group: 'ACCOUNT',
   ),
 ];
 
 const List<NavItem> doctorExtraNavItems = [
   NavItem(
-    label: 'Waste',
-    icon: Icons.delete_outline,
-    activeIcon: Icons.delete,
-    path: '/doctor/waste',
-  ),
-  NavItem(
     label: 'Advisories',
     icon: Icons.campaign_outlined,
     activeIcon: Icons.campaign,
     path: '/doctor/advisories',
+    group: 'SERVICES',
   ),
 ];
 
@@ -137,30 +159,35 @@ const List<NavItem> adminNavItems = [
     icon: Icons.dashboard_outlined,
     activeIcon: Icons.dashboard,
     path: '/admin',
+    group: 'MAIN',
   ),
   NavItem(
     label: 'Users',
     icon: Icons.people_outline,
     activeIcon: Icons.people,
     path: '/admin/users',
+    group: 'MAIN',
   ),
   NavItem(
     label: 'Verify',
     icon: Icons.fact_check_outlined,
     activeIcon: Icons.fact_check,
     path: '/admin/verification',
+    group: 'MAIN',
   ),
   NavItem(
     label: 'Announce',
     icon: Icons.campaign_outlined,
     activeIcon: Icons.campaign,
     path: '/admin/announcements',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Profile',
     icon: Icons.person_outlined,
     activeIcon: Icons.person,
     path: '/admin/profile',
+    group: 'ACCOUNT',
   ),
 ];
 
@@ -170,18 +197,28 @@ const List<NavItem> adminExtraNavItems = [
     icon: Icons.map_outlined,
     activeIcon: Icons.map,
     path: '/admin/hotspots',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Waste',
     icon: Icons.delete_sweep_outlined,
     activeIcon: Icons.delete_sweep,
     path: '/admin/waste',
+    group: 'SERVICES',
   ),
   NavItem(
     label: 'Advisories',
     icon: Icons.health_and_safety_outlined,
     activeIcon: Icons.health_and_safety,
     path: '/admin/advisories',
+    group: 'SERVICES',
+  ),
+  NavItem(
+    label: 'Community',
+    icon: Icons.favorite_border,
+    activeIcon: Icons.favorite,
+    path: '/admin/community',
+    group: 'SERVICES',
   ),
 ];
 
@@ -193,10 +230,10 @@ const List<NavItem> wasteNavItems = [
     path: '/waste-management',
   ),
   NavItem(
-    label: 'Hotspots',
-    icon: Icons.map_outlined,
-    activeIcon: Icons.map,
-    path: '/waste-management/map',
+    label: 'Navigate',
+    icon: Icons.directions_outlined,
+    activeIcon: Icons.directions,
+    path: '/waste-management/collection-map',
   ),
   NavItem(
     label: 'Advisories',
@@ -244,6 +281,17 @@ class RoleShell extends StatelessWidget {
     return best;
   }
 
+  /// Same longest-prefix match as `_selectedIndex`, but returns the winning
+  /// item's path instead of a position — the web sidebar groups items under
+  /// headers (MAIN/SERVICES/ACCOUNT), which reorders them relative to the
+  /// flat navItems+extraNavItems list, so a positional index can't reliably
+  /// identify "which item is active" there the way it still can for
+  /// NavigationRail/BottomNavigationBar (which render items in list order).
+  String? _activePath(BuildContext context, List<NavItem> items) {
+    final index = _selectedIndex(context, items);
+    return index < 0 ? null : items[index].path;
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
@@ -257,7 +305,7 @@ class RoleShell extends StatelessWidget {
         navItems: navItems,
         extraNavItems: extraNavItems,
         roleLabel: roleLabel,
-        selected: _selectedIndex(context, [...navItems, ...extraNavItems]),
+        activePath: _activePath(context, [...navItems, ...extraNavItems]),
         child: child,
       );
     } else if (isTablet) {
@@ -407,7 +455,31 @@ class _MobileLayout extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
-      body: child,
+      body: Column(
+        children: [
+          // Mobile has no persistent header of its own (unlike the tablet
+          // rail / web sidebar, which wrap every page already) — without
+          // this, the bell only existed on whichever screen happened to
+          // add its own, so it vanished the moment a resident tapped to
+          // any other tab. This is a real row in the layout (not a
+          // floating overlay) specifically so it never sits on top of a
+          // page's own title/subtitle — every page's content is simply
+          // pushed down to make room for it, the same way an app bar
+          // would, instead of covering whatever the page renders at its
+          // own top-right corner.
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: NotificationBellButton(),
+              ),
+            ),
+          ),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.fromLTRB(
           12,
@@ -480,11 +552,7 @@ class _TabletLayout extends StatelessWidget {
                   children: [
                     const _ShieldBadge(),
                     const SizedBox(height: 14),
-                    IconButton(
-                      onPressed: () => openNotificationsPanel(context),
-                      icon: const Icon(Icons.notifications_outlined),
-                      tooltip: 'Notifications',
-                    ),
+                    const NotificationBellButton(),
                   ],
                 ),
               ),
@@ -517,13 +585,13 @@ class _WebLayout extends StatelessWidget {
   final List<NavItem> navItems;
   final List<NavItem> extraNavItems;
   final String roleLabel;
-  final int selected;
+  final String? activePath;
   const _WebLayout({
     required this.child,
     required this.navItems,
     required this.extraNavItems,
     required this.roleLabel,
-    required this.selected,
+    required this.activePath,
   });
 
   @override
@@ -536,7 +604,7 @@ class _WebLayout extends StatelessWidget {
             navItems: navItems,
             extraNavItems: extraNavItems,
             roleLabel: roleLabel,
-            selected: selected,
+            activePath: activePath,
           ),
           Expanded(
             child: Padding(
@@ -554,17 +622,38 @@ class _WebSidebar extends StatelessWidget {
   final List<NavItem> navItems;
   final List<NavItem> extraNavItems;
   final String roleLabel;
-  final int selected;
+  final String? activePath;
   const _WebSidebar({
     required this.navItems,
     required this.extraNavItems,
     required this.roleLabel,
-    required this.selected,
+    required this.activePath,
   });
+
+  /// Buckets items by `group`, preserving the order each group name was
+  /// first seen in — NOT the alphabetical/list order — so "MAIN" still
+  /// renders above "SERVICES" even though `civilianExtraNavItems` (which
+  /// contains a MAIN item, Community) is appended after `civilianNavItems`
+  /// (which already contains SERVICES/ACCOUNT items) in the underlying
+  /// flat list. Items with no group (e.g. the waste-personnel role, which
+  /// has too few destinations to benefit from grouping) fall into a single
+  /// unlabeled bucket, rendered exactly as the old flat list used to.
+  List<MapEntry<String?, List<NavItem>>> _grouped(List<NavItem> items) {
+    final order = <String?>[];
+    final buckets = <String?, List<NavItem>>{};
+    for (final item in items) {
+      buckets.putIfAbsent(item.group, () {
+        order.add(item.group);
+        return [];
+      }).add(item);
+    }
+    return [for (final key in order) MapEntry(key, buckets[key]!)];
+  }
 
   @override
   Widget build(BuildContext context) {
     final allItems = [...navItems, ...extraNavItems];
+    final groups = _grouped(allItems);
     return Container(
       width: 240,
       decoration: const BoxDecoration(
@@ -593,12 +682,7 @@ class _WebSidebar extends StatelessWidget {
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: () => openNotificationsPanel(context),
-                  icon: const Icon(Icons.notifications_outlined, size: 19),
-                  tooltip: 'Notifications',
-                  visualDensity: VisualDensity.compact,
-                ),
+                const NotificationBellButton(iconSize: 19),
               ],
             ),
           ),
@@ -607,18 +691,31 @@ class _WebSidebar extends StatelessWidget {
             child: Divider(color: AppColors.border),
           ),
           Expanded(
-            child: ListView.builder(
+            child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              itemCount: allItems.length,
-              itemBuilder: (context, i) {
-                final item = allItems[i];
-                final isActive = i == selected;
-                return _SidebarNavItem(
-                  item: item,
-                  isActive: isActive,
-                  onTap: () => context.go(item.path),
-                );
-              },
+              children: [
+                for (final group in groups) ...[
+                  if (group.key != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
+                      child: Text(
+                        group.key!,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                  for (final item in group.value)
+                    _SidebarNavItem(
+                      item: item,
+                      isActive: item.path == activePath,
+                      onTap: () => context.go(item.path),
+                    ),
+                ],
+              ],
             ),
           ),
           const Divider(color: AppColors.border),
@@ -696,9 +793,13 @@ class _SidebarNavItemState extends State<_SidebarNavItem> {
         transform: Matrix4.translationValues(highlighted ? 3 : 0, 0, 0),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
-          color: active
-              ? AppColors.primaryGlow
-              : (_hovering ? AppColors.surfaceElevated : Colors.transparent),
+          // Deliberately NOT the same filled-background treatment as
+          // active — a hovered-but-inactive item and the truly active one
+          // looked interchangeable in a static screenshot when both used a
+          // solid fill (just different colors). Hover now only shifts
+          // text/icon color and nudges right (below); only the active item
+          // ever gets a filled box + border + left accent bar.
+          color: active ? AppColors.primaryGlow : Colors.transparent,
           border: active
               ? Border.all(color: AppColors.primary.withValues(alpha: 0.3))
               : null,

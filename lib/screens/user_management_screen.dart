@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
 import '../widgets/section_header.dart';
 
@@ -14,9 +15,23 @@ class UserManagementScreen extends StatefulWidget {
 
 class _UserManagementScreenState extends State<UserManagementScreen> {
   List<Map<String, dynamic>> _users = [];
+  final Set<String> _busyIds = {};
+  Map<String, int> _reportCounts = {};
+  Map<String, int> _appointmentCounts = {};
+  Map<String, int> _wasteCounts = {};
   Object? _error;
   bool _loading = true;
   String _query = '';
+
+  Map<String, int> _countBy(List<Map<String, dynamic>> items, String idKey) {
+    final counts = <String, int>{};
+    for (final item in items) {
+      final id = item[idKey] as String?;
+      if (id == null) continue;
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return counts;
+  }
 
   String _canonicalRole(Object? value) {
     final role = '$value';
@@ -38,7 +53,16 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       _error = null;
     });
     try {
-      _users = await DatabaseService.instance.fetchProfiles();
+      final values = await Future.wait([
+        DatabaseService.instance.fetchProfiles(),
+        DatabaseService.instance.fetchReports(),
+        DatabaseService.instance.fetchAppointments(),
+        DatabaseService.instance.fetchWasteRequests(),
+      ]);
+      _users = values[0];
+      _reportCounts = _countBy(values[1], 'reporter_id');
+      _appointmentCounts = _countBy(values[2], 'patient_id');
+      _wasteCounts = _countBy(values[3], 'requester_id');
     } catch (error) {
       _error = error;
     } finally {
@@ -47,6 +71,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   }
 
   Future<void> _changeRole(Map<String, dynamic> user, String role) async {
+    final id = '${user['id']}';
+    if (_busyIds.contains(id)) return;
     final old = _canonicalRole(user['role']);
     if (old == role) return;
     if (old == 'admin' && role != 'admin') {
@@ -62,18 +88,23 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         return;
       }
     }
+    setState(() => _busyIds.add(id));
     try {
-      await DatabaseService.instance.updateUserRole('${user['id']}', role);
+      await DatabaseService.instance.updateUserRole(id, role);
       if (!mounted) return;
       setState(() => user['role'] = role);
       showMessage(context, 'Role updated to ${humanize(role)}.');
     } catch (error) {
       if (mounted) showMessage(context, errorMessage(error), error: true);
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(id));
     }
   }
 
   Future<void> _toggleActive(Map<String, dynamic> user, bool active) async {
-    if ('${user['id']}' == authService.currentUser?.id && !active) {
+    final id = '${user['id']}';
+    if (_busyIds.contains(id)) return;
+    if (id == authService.currentUser?.id && !active) {
       showMessage(
         context,
         'You cannot suspend your own administrator account.',
@@ -81,8 +112,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       );
       return;
     }
+    setState(() => _busyIds.add(id));
     try {
-      await DatabaseService.instance.setUserActive('${user['id']}', active);
+      await DatabaseService.instance.setUserActive(id, active);
       if (!mounted) return;
       setState(() => user['is_active'] = active);
       showMessage(
@@ -91,6 +123,8 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       );
     } catch (error) {
       if (mounted) showMessage(context, errorMessage(error), error: true);
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(id));
     }
   }
 
@@ -143,6 +177,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     itemBuilder: (context, index) {
                       final user = filtered[index];
                       final active = user['is_active'] as bool? ?? true;
+                      final userId = '${user['id']}';
+                      final reportCount = _reportCounts[userId] ?? 0;
+                      final appointmentCount =
+                          _appointmentCounts[userId] ?? 0;
+                      final wasteCount = _wasteCounts[userId] ?? 0;
+                      final activityParts = [
+                        if (reportCount > 0)
+                          '$reportCount report${reportCount == 1 ? '' : 's'}',
+                        if (appointmentCount > 0)
+                          '$appointmentCount appointment${appointmentCount == 1 ? '' : 's'}',
+                        if (wasteCount > 0)
+                          '$wasteCount waste request${wasteCount == 1 ? '' : 's'}',
+                      ];
                       return Card(
                         child: Padding(
                           padding: const EdgeInsets.all(14),
@@ -171,6 +218,14 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                           ).textTheme.titleMedium,
                                         ),
                                         Text('${user['email']}'),
+                                        if (activityParts.isNotEmpty)
+                                          Text(
+                                            activityParts.join(' · '),
+                                            style: const TextStyle(
+                                              color: AppColors.textMuted,
+                                              fontSize: 11,
+                                            ),
+                                          ),
                                         if (!active)
                                           Text(
                                             'Suspended',
@@ -186,6 +241,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                   ),
                                 ],
                               );
+                              final busy = _busyIds.contains(userId);
                               final controls = Wrap(
                                 spacing: 8,
                                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -218,23 +274,34 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                                           child: Text('Administrator'),
                                         ),
                                       ],
-                                      onChanged: (value) {
-                                        if (value != null) {
-                                          _changeRole(user, value);
-                                        }
-                                      },
+                                      onChanged: busy
+                                          ? null
+                                          : (value) {
+                                              if (value != null) {
+                                                _changeRole(user, value);
+                                              }
+                                            },
                                     ),
                                   ),
-                                  Tooltip(
-                                    message: active
-                                        ? 'Suspend account'
-                                        : 'Reactivate account',
-                                    child: Switch(
-                                      value: active,
-                                      onChanged: (value) =>
-                                          _toggleActive(user, value),
+                                  if (busy)
+                                    const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  else
+                                    Tooltip(
+                                      message: active
+                                          ? 'Suspend account'
+                                          : 'Reactivate account',
+                                      child: Switch(
+                                        value: active,
+                                        onChanged: (value) =>
+                                            _toggleActive(user, value),
+                                      ),
                                     ),
-                                  ),
                                 ],
                               );
                               if (constraints.maxWidth < 650) {

@@ -190,6 +190,29 @@ class DatabaseService {
     }
   }
 
+  /// Count of the signed-in user's own reports of [reportType] filed within
+  /// [window] of now. Used to cap how many case reports a resident can file
+  /// in a rolling day — the anti-spam control that stands in for the photo
+  /// requirement on dengue-case reports (symptoms often aren't
+  /// photographable, so that report type can't lean on "a photo costs more
+  /// than typing text" the way breeding-site reports do). Best-effort: a
+  /// failed lookup never blocks submission, it just skips the cap.
+  Future<int> recentOwnReportCount({
+    required String reportType,
+    required Duration window,
+  }) async {
+    try {
+      final rows = await fetchReports(ownOnly: true, reportType: reportType);
+      final cutoff = DateTime.now().toUtc().subtract(window);
+      return rows.where((row) {
+        final createdAt = DateTime.tryParse('${row['created_at']}');
+        return createdAt != null && createdAt.isAfter(cutoff);
+      }).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Future<void> updateReportStatus({
     required String reportId,
     required String status,
@@ -333,6 +356,34 @@ class DatabaseService {
       throw DataServiceException.from(
         error,
         fallback: 'Unable to book the appointment.',
+      );
+    }
+  }
+
+  /// Resident-facing edit of their own pending appointment — separate from
+  /// [updateAppointmentStatus], which is the staff-driven approve/reject/
+  /// complete transition. RLS (appointments_update_own_or_staff) already
+  /// lets a patient update their own row; the app layer restricts this to
+  /// while status is still 'pending' (see appointments_screen.dart) so an
+  /// edit can't quietly reschedule a slot staff already approved.
+  Future<void> updateAppointmentDetails({
+    required String id,
+    required DateTime scheduledAt,
+    required String reason,
+  }) async {
+    try {
+      await _client
+          .from('appointments')
+          .update({
+            'scheduled_at': scheduledAt.toUtc().toIso8601String(),
+            'reason': reason,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', id);
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to update the appointment.',
       );
     }
   }
@@ -600,6 +651,45 @@ class DatabaseService {
     }
   }
 
+  /// Unread count only, for the bell badge every page shows — cheap enough
+  /// (per-user row count, not the full table) to call every time the badge
+  /// needs a number instead of a guess.
+  Future<int> fetchUnreadNotificationCount() async {
+    try {
+      final result = await _client
+          .from('notifications')
+          .select('id')
+          .eq('user_id', _userId)
+          .eq('read', false);
+      return _rows(result).length;
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to load notifications.',
+      );
+    }
+  }
+
+  /// Live updates for the signed-in user's own notifications — the bell
+  /// badge refreshes its count as soon as something new arrives, instead of
+  /// only updating the next time the shell happens to rebuild.
+  RealtimeChannel watchNotifications(void Function() onChange) {
+    return _client
+        .channel('notifications-$_userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: _userId,
+          ),
+          callback: (_) => onChange(),
+        )
+        .subscribe();
+  }
+
   Future<void> markNotificationRead(String id) async {
     try {
       await _client.from('notifications').update({'read': true}).eq('id', id);
@@ -625,6 +715,335 @@ class DatabaseService {
       );
     }
   }
+
+  /// Fires the `outbreak_alert` notification type — schema, icon, and
+  /// routing already existed in notifications_panel.dart, nothing ever
+  /// inserted one until this. `notifications.user_id` is NOT NULL (one row
+  /// per recipient, no broadcast column exists yet — see
+  /// health_advisories' own lack of barangay targeting), so this only
+  /// reaches the specific residents in [residentIds] rather than every
+  /// resident in the system. The caller is expected to pass the reporters
+  /// whose verified reports are physically near the hotspot, which is the
+  /// only "who's near this outbreak" signal available without the
+  /// geographic-targeting schema work planned separately.
+  Future<void> sendOutbreakAlerts({
+    required Iterable<String> residentIds,
+    required String barangay,
+    required String riskLevel,
+  }) async {
+    final ids = residentIds.toSet();
+    if (ids.isEmpty) return;
+    try {
+      await _client.from('notifications').insert(
+        ids
+            .map(
+              (id) => {
+                'user_id': id,
+                'title': 'Dengue hotspot alert',
+                'body':
+                    '$barangay has been flagged as a $riskLevel-risk '
+                    'dengue area based on verified case reports near you. '
+                    'Take precautions and watch for symptoms.',
+                'type': 'outbreak_alert',
+                'read': false,
+              },
+            )
+            .toList(),
+      );
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to send outbreak alerts.',
+      );
+    }
+  }
+
+  // ── Community stories (resident peer-support feed) ──────────────────────
+  // See supabase/COMMUNITY_STORIES.sql for the schema/RLS this relies on.
+  // Resident-only (RLS enforces this server-side too — these calls simply
+  // fail with a permission error for any other role, same as every other
+  // RLS-gated write in this file).
+
+  /// Looks up name/photo for a set of author ids via the narrow
+  /// `community_author_info` SECURITY DEFINER function (see
+  /// supabase/COMMUNITY_AUTHOR_LOOKUP.sql) and stitches a `profiles` map
+  /// onto each row, matching the shape a Postgrest embed would have
+  /// produced. NOT a real embed: `profiles`' own RLS only lets a resident
+  /// read their own row (staff can read everyone's, a resident can't read
+  /// another resident's) — an embedded `profiles!...` join here would
+  /// silently return null for every other resident's post. This function
+  /// exists specifically so that doesn't happen.
+  Future<List<Map<String, dynamic>>> _attachAuthors(
+    List<Map<String, dynamic>> rows,
+    String authorIdKey,
+  ) async {
+    final ids = rows
+        .map((r) => r[authorIdKey] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return rows;
+    final authorRows = _rows(
+      await _client.rpc('community_author_info', params: {'p_ids': ids}),
+    );
+    final byId = {for (final a in authorRows) '${a['id']}': a};
+    for (final row in rows) {
+      final author = byId['${row[authorIdKey]}'];
+      row['profiles'] = author == null
+          ? null
+          : {'full_name': author['full_name'], 'photo_url': author['photo_url']};
+    }
+    return rows;
+  }
+
+  /// Paginated, newest-first. [before]/[after] are `created_at` cursors —
+  /// [before] powers "load more" (infinite scroll, going further back),
+  /// [after] powers the realtime feed's "what's new since I last looked"
+  /// check. Never fetches the whole table at once: with the feed
+  /// potentially serving every resident in the barangay at once, an
+  /// unbounded `select()` is exactly the kind of thing that stops scaling
+  /// quietly (see BATCH_PROCESSING conventions used elsewhere in this app).
+  Future<List<Map<String, dynamic>>> fetchCommunityPosts({
+    int limit = 12,
+    String? before,
+    String? after,
+  }) async {
+    try {
+      var request = _client.from('community_posts').select();
+      if (before != null) request = request.lt('created_at', before);
+      if (after != null) request = request.gt('created_at', after);
+      final result = await request
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return await _attachAuthors(_rows(result), 'author_id');
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to load community stories.',
+      );
+    }
+  }
+
+  /// Which of the given post ids are still visible (not soft-deleted, and
+  /// RLS-readable by the caller) — used by the realtime feed to notice a
+  /// post it already has on screen got removed/moderated elsewhere, without
+  /// re-fetching full post rows just to find that out.
+  Future<Set<String>> fetchVisibleCommunityPostIds(List<String> ids) async {
+    if (ids.isEmpty) return {};
+    try {
+      final result = await _client
+          .from('community_posts')
+          .select('id')
+          .inFilter('id', ids)
+          .isFilter('deleted_at', null);
+      return _rows(result).map((r) => '${r['id']}').toSet();
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to refresh community stories.',
+      );
+    }
+  }
+
+  /// Live updates for the Community feed — a new post, comment, or "love"
+  /// from any resident. The screen uses this to refresh in place (like a
+  /// social app's live feed) instead of leaving residents to pull-to-refresh
+  /// to see new activity. The pull-to-refresh/refresh-button path still
+  /// works independently — this is additive, not a replacement.
+  /// Caller owns the returned channel and must call `.unsubscribe()` on it
+  /// (e.g. in `dispose()`).
+  RealtimeChannel watchCommunityFeed(void Function() onChange) {
+    return _client
+        .channel('community-feed')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'community_posts',
+          callback: (_) => onChange(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'community_comments',
+          callback: (_) => onChange(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'community_reactions',
+          callback: (_) => onChange(),
+        )
+        .subscribe();
+  }
+
+  /// All reactions for the given posts in one call — the feed screen
+  /// computes per-post counts and "did I react" client-side from this,
+  /// the same groupBy-on-already-fetched-data pattern used throughout this
+  /// app rather than a server-side aggregate query.
+  Future<List<Map<String, dynamic>>> fetchCommunityReactions(
+    List<String> postIds,
+  ) async {
+    if (postIds.isEmpty) return [];
+    try {
+      final result = await _client
+          .from('community_reactions')
+          .select()
+          .inFilter('post_id', postIds);
+      return _rows(result);
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to load reactions.',
+      );
+    }
+  }
+
+  /// Comment *counts* only (id + post_id, no content) for the feed list —
+  /// full comment content is fetched separately, only when a resident
+  /// actually opens a post's comment thread.
+  Future<List<Map<String, dynamic>>> fetchCommunityCommentCounts(
+    List<String> postIds,
+  ) async {
+    if (postIds.isEmpty) return [];
+    try {
+      final result = await _client
+          .from('community_comments')
+          .select('id, post_id')
+          .inFilter('post_id', postIds)
+          .isFilter('deleted_at', null);
+      return _rows(result);
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to load comment counts.',
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchCommunityComments(
+    String postId,
+  ) async {
+    try {
+      final result = await _client
+          .from('community_comments')
+          .select()
+          .eq('post_id', postId)
+          .isFilter('deleted_at', null)
+          .order('created_at', ascending: true);
+      return await _attachAuthors(_rows(result), 'author_id');
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to load comments.',
+      );
+    }
+  }
+
+  Future<void> createCommunityPost({
+    required String content,
+    Uint8List? photoBytes,
+  }) async {
+    try {
+      String? photoPath;
+      if (photoBytes != null) {
+        photoPath = await uploadPrivateImage(
+          bucket: 'community-photos',
+          folder: 'posts',
+          bytes: photoBytes,
+        );
+      }
+      await _client.from('community_posts').insert({
+        'author_id': _userId,
+        'content': content,
+        if (photoPath != null) 'photo_url': photoPath,
+      });
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to share your story.',
+      );
+    }
+  }
+
+  /// Soft delete — matches every other table in this schema. Author-owned
+  /// (RLS `community_posts_update_own`) or admin moderation
+  /// (`community_posts_moderate`) both route through this same call; RLS
+  /// decides which one actually applies to the signed-in account.
+  Future<void> deleteCommunityPost(String id) async {
+    try {
+      await _client
+          .from('community_posts')
+          .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', id);
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to remove this post.',
+      );
+    }
+  }
+
+  Future<void> createCommunityComment({
+    required String postId,
+    required String content,
+  }) async {
+    try {
+      await _client.from('community_comments').insert({
+        'post_id': postId,
+        'author_id': _userId,
+        'content': content,
+      });
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to post your comment.',
+      );
+    }
+  }
+
+  Future<void> deleteCommunityComment(String id) async {
+    try {
+      await _client
+          .from('community_comments')
+          .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', id);
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to remove this comment.',
+      );
+    }
+  }
+
+  /// Reactions have no soft-delete state (see COMMUNITY_STORIES.sql) — a
+  /// real insert/delete toggle, same as un-liking a post anywhere else.
+  Future<void> setCommunityReaction({
+    required String postId,
+    required bool reacted,
+  }) async {
+    try {
+      if (reacted) {
+        await _client.from('community_reactions').insert({
+          'post_id': postId,
+          'user_id': _userId,
+        });
+      } else {
+        await _client
+            .from('community_reactions')
+            .delete()
+            .eq('post_id', postId)
+            .eq('user_id', _userId);
+      }
+    } catch (error) {
+      throw DataServiceException.from(
+        error,
+        fallback: 'Unable to update your reaction.',
+      );
+    }
+  }
+
+  String communityPhotoPublicUrl(String path) =>
+      _client.storage.from('community-photos').getPublicUrl(path);
 
   // ── Profiles and administration ─────────────────────────────────────────
 

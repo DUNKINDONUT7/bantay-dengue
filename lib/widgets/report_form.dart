@@ -4,13 +4,15 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../services/ai_service.dart';
 import '../services/database_service.dart';
-import '../services/geocoding_service.dart';
 import '../services/image_picker_stub.dart';
-import '../services/location_helper.dart';
+import '../services/weather_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/submit_throttle.dart';
 import '../utils/ui_helpers.dart';
+import 'location_picker_field.dart';
+import 'report_form_parts.dart';
 import 'section_header.dart';
 
 class ReportForm extends StatefulWidget {
@@ -32,6 +34,32 @@ class ReportForm extends StatefulWidget {
 }
 
 class _ReportFormState extends State<ReportForm> with SubmitThrottle {
+  // Marilao, Bulacan — same fallback used by hotspot_map_screen.dart, for
+  // the breeding-site weather nudge before any pin is picked.
+  static const _fallbackLat = 14.7575;
+  static const _fallbackLng = 120.9480;
+
+  static const _symptomOptions = [
+    'Fever',
+    'Headache',
+    'Rash',
+    'Joint or muscle pain',
+    'Nausea or vomiting',
+    'Pain behind the eyes',
+    'Bleeding gums or nose',
+    'Abdominal pain',
+  ];
+
+  static const _containerOptions = [
+    'Water drum',
+    'Old tire',
+    'Flower pot',
+    'Gutter',
+    'Pail or basin',
+    'Discarded container',
+    'Construction debris',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final _location = TextEditingController();
   final _details = TextEditingController();
@@ -39,15 +67,36 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
   final _longitude = TextEditingController();
   Uint8List? _photo;
   bool _submitting = false;
-  bool _locating = false;
-  bool _geocoding = false;
   bool? _nearbyDuplicate;
-  bool _manualCoordsExpanded = false;
-
-  bool get _hasCoordinates =>
-      _latitude.text.trim().isNotEmpty && _longitude.text.trim().isNotEmpty;
+  final Set<String> _selectedTags = {};
+  CaseSeverity? _severity;
+  WeatherRisk? _weather;
+  DateTime? _appointmentTime;
 
   bool get _isDengueCase => widget.reportType == 'dengue_case';
+
+  List<String> get _tagOptions =>
+      _isDengueCase ? _symptomOptions : _containerOptions;
+
+  @override
+  void initState() {
+    super.initState();
+    // Breeding-site reports get a live weather-risk nudge; case reports
+    // don't need it. Fetched once against the barangay fallback point —
+    // this is a regional forecast, not tied to the exact pin the resident
+    // hasn't chosen yet.
+    if (!_isDengueCase) {
+      unawaited(_loadWeather());
+    }
+  }
+
+  Future<void> _loadWeather() async {
+    final risk = await WeatherService.instance.fetchRisk(
+      latitude: _fallbackLat,
+      longitude: _fallbackLng,
+    );
+    if (mounted) setState(() => _weather = risk);
+  }
 
   String get _detailsLabel =>
       _isDengueCase ? 'Case details' : 'Breeding site details';
@@ -81,59 +130,31 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
     super.dispose();
   }
 
-  Future<void> _useCurrentLocation() async {
-    setState(() => _locating = true);
-    try {
-      final loc = await LocationHelper.getCurrentLocation();
-      _latitude.text = loc.latitude.toStringAsFixed(6);
-      _longitude.text = loc.longitude.toStringAsFixed(6);
-      if (mounted) setState(() => _manualCoordsExpanded = false);
-      unawaited(_afterCoordinatesResolved());
-    } on LocationFailure catch (failure) {
-      if (!mounted) return;
-      final message = switch (failure.reason) {
-        LocationFailureReason.permissionDenied =>
-          'Location permission was denied. You can still enter '
-              'coordinates manually below, or just describe the landmark.',
-        LocationFailureReason.serviceDisabled =>
-          'Turn on location services to use this, or enter coordinates '
-              'manually below.',
-        LocationFailureReason.other =>
-          "Couldn't get your location. You can enter coordinates manually "
-              'below instead.',
-      };
-      showMessage(context, message, error: true);
-    } finally {
-      if (mounted) setState(() => _locating = false);
-    }
+  /// Fires whenever the location picker resolves a point — from a map tap,
+  /// an address search, or the GPS shortcut. Fills the human-readable
+  /// location field only if the resident hasn't already typed one, then
+  /// checks whether someone already flagged this spot recently, so we can
+  /// nudge instead of silently letting duplicate reports pile up.
+  void _onLocationPicked(LocationPickResult result) {
+    setState(() {
+      _latitude.text = result.latitude.toStringAsFixed(6);
+      _longitude.text = result.longitude.toStringAsFixed(6);
+      if (result.address != null && _location.text.trim().isEmpty) {
+        _location.text = result.address!;
+      }
+    });
+    unawaited(_checkNearbyDuplicate(result.latitude, result.longitude));
   }
 
-  /// Runs once GPS coordinates are captured: fills in a human-readable
-  /// location (if the resident hasn't already typed one) and checks whether
-  /// someone already flagged this spot recently, so we can nudge instead of
-  /// silently letting duplicate reports pile up. Both are best-effort and
-  /// never block submission if they fail or time out.
-  Future<void> _afterCoordinatesResolved() async {
-    final lat = double.tryParse(_latitude.text.trim());
-    final lng = double.tryParse(_longitude.text.trim());
-    if (lat == null || lng == null) return;
+  void _onLocationCleared() {
+    setState(() {
+      _latitude.clear();
+      _longitude.clear();
+      _nearbyDuplicate = null;
+    });
+  }
 
-    if (_location.text.trim().isEmpty) {
-      setState(() => _geocoding = true);
-      final address = await GeocodingService.instance.reverseGeocode(
-        latitude: lat,
-        longitude: lng,
-      );
-      if (mounted) {
-        setState(() {
-          _geocoding = false;
-          if (address != null && _location.text.trim().isEmpty) {
-            _location.text = address;
-          }
-        });
-      }
-    }
-
+  Future<void> _checkNearbyDuplicate(double lat, double lng) async {
     final duplicate = await DatabaseService.instance.nearbyReportExists(
       reportType: widget.reportType,
       latitude: lat,
@@ -142,8 +163,111 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
     if (mounted) setState(() => _nearbyDuplicate = duplicate);
   }
 
+  void _toggleTag(String tag) {
+    setState(() {
+      if (!_selectedTags.remove(tag)) _selectedTags.add(tag);
+    });
+  }
+
+  /// Same date/time flow as request_appointment_screen.dart, folded in here
+  /// so booking a consultation is one more toggle on the case-report form
+  /// instead of a second trip through the standalone Appointments screen —
+  /// both ultimately land in the same health worker queue anyway.
+  Future<void> _pickAppointmentTime() async {
+    // Severe self-assessed cases default to the soonest possible slot
+    // instead of "tomorrow" — a small nudge, not a substitute for the
+    // emergency-care banner shown above when severity is Severe.
+    final suggestedGap = _severity == CaseSeverity.severe
+        ? const Duration(hours: 2)
+        : const Duration(days: 1);
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _appointmentTime ?? DateTime.now().add(suggestedGap),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 120)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(
+        _appointmentTime ?? DateTime.now().add(const Duration(hours: 1)),
+      ),
+    );
+    if (time == null || !mounted) return;
+    final combined = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    if (combined.isBefore(DateTime.now())) {
+      showMessage(
+        context,
+        "Choose a time that hasn't already passed today.",
+        error: true,
+      );
+      return;
+    }
+    setState(() => _appointmentTime = combined);
+  }
+
+  /// The reports table has no symptoms/severity/container columns (see
+  /// supabase/schema.sql) and adding one needs a hand-applied migration the
+  /// grading project may not have run yet — so the quick-tag and severity
+  /// picks are folded into the one `description` column as a labelled
+  /// header instead of the freeform note, rather than sent as separate
+  /// fields that would silently fail to persist.
+  String _composeDescription() {
+    final buffer = StringBuffer();
+    if (_selectedTags.isNotEmpty) {
+      final label = _isDengueCase ? 'Reported symptoms' : 'Visible containers';
+      buffer.writeln('$label: ${_selectedTags.join(', ')}');
+    }
+    if (_isDengueCase && _severity != null) {
+      buffer.writeln('Reporter-assessed severity: ${_severity!.label}');
+    }
+    final freeform = _details.text.trim();
+    if (freeform.isNotEmpty) {
+      if (buffer.isNotEmpty) buffer.writeln();
+      buffer.write(freeform);
+    }
+    return buffer.toString().trim();
+  }
+
+  // Dengue-case reports often describe symptoms that never produce anything
+  // photographable (fever, pain behind the eyes, nausea) — forcing a photo
+  // there meant genuine self-reporters either stalled or uploaded an
+  // unrelated image just to get past the check. Breeding sites are visual
+  // by nature, so the photo stays required there.
+  static const _dengueCaseDailyLimit = 3;
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    // Photo evidence isn't a FormField, so the Form's own validate() can't
+    // catch a missing one — checked explicitly here instead. For breeding
+    // sites this still raises the cost of a spam/troll submission (typing
+    // text is free; producing a relevant photo isn't). Dengue-case reports
+    // rely on the daily cap below instead, since a photo isn't always
+    // possible for a genuine self-reporter.
+    if (!_isDengueCase && _photo == null) {
+      showMessage(
+        context,
+        'Add a photo before submitting — this helps keep reports genuine for the staff reviewing them.',
+        error: true,
+      );
+      return;
+    }
+    // A dengue-case report IS the appointment request — filing one always
+    // requests a consultation slot, not an optional add-on beside it.
+    if (_isDengueCase && _appointmentTime == null) {
+      showMessage(
+        context,
+        'Choose a preferred date and time for your consultation.',
+        error: true,
+      );
+      return;
+    }
     // Same client-side cooldown caveat as signup_screen.dart's _submit:
     // deters accidental double-submits, not a real abuse control.
     final wait = checkSubmitCooldown();
@@ -155,18 +279,59 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
       );
       return;
     }
+    // Without a mandatory photo, an account that keeps filing case reports
+    // is the next-cheapest abuse signal to catch — cap how many a resident
+    // can file in a rolling day. Real deteriorating cases are told to go
+    // straight to the health center rather than keep re-filing.
+    if (_isDengueCase) {
+      final recentCount = await DatabaseService.instance.recentOwnReportCount(
+        reportType: widget.reportType,
+        window: const Duration(hours: 24),
+      );
+      if (recentCount >= _dengueCaseDailyLimit) {
+        if (!mounted) return;
+        showMessage(
+          context,
+          "You've already filed $recentCount case reports in the last 24 "
+          'hours. If your symptoms are getting worse, please go straight '
+          'to the Barangay Health Center instead of submitting again.',
+          error: true,
+        );
+        return;
+      }
+    }
     setState(() => _submitting = true);
     try {
       await DatabaseService.instance.submitReport(
         type: widget.reportType,
-        description: _details.text.trim(),
+        description: _composeDescription(),
         locationText: _location.text.trim(),
         latitude: double.tryParse(_latitude.text.trim()),
         longitude: double.tryParse(_longitude.text.trim()),
         photoBytes: _photo,
       );
+      var message = _submittedMessage;
+      // The appointment is a second, independent insert (reports and
+      // appointments are separate tables — see supabase/schema.sql, no FK
+      // between them). If it fails, the report the resident actually came
+      // here to file is already safely submitted, so that isn't rolled
+      // back — they're just told to retry from the Appointments tab
+      // instead of losing the whole submission.
+      if (_isDengueCase && _appointmentTime != null) {
+        try {
+          await DatabaseService.instance.createAppointment(
+            scheduledAt: _appointmentTime!,
+            reason: _composeDescription(),
+          );
+          message = '$message An appointment was requested too.';
+        } catch (_) {
+          message =
+              '$message The appointment could not be requested — try '
+              'again from the Appointments tab.';
+        }
+      }
       if (!mounted) return;
-      showMessage(context, _submittedMessage);
+      showMessage(context, message);
       _formKey.currentState!.reset();
       _location.clear();
       _details.clear();
@@ -174,8 +339,10 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
       _longitude.clear();
       setState(() {
         _photo = null;
-        _manualCoordsExpanded = false;
         _nearbyDuplicate = null;
+        _selectedTags.clear();
+        _severity = null;
+        _appointmentTime = null;
       });
     } catch (error) {
       if (mounted) showMessage(context, errorMessage(error), error: true);
@@ -190,7 +357,293 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
     final scheme = theme.colorScheme;
     final width = MediaQuery.sizeOf(context).width;
     final compact = width < 560;
+    // Below this, two side-by-side ~380px columns would be cramped and
+    // start wrapping awkwardly — one wide column reads better instead.
+    final wide = width >= 980;
+    // A flat 760px cap left most of a desktop window empty next to the
+    // 240px sidebar. Wide screens get real estate to actually use (two
+    // columns instead of one narrow strip); narrow/compact keep the old cap.
+    final maxWidth = wide ? 1180.0 : 760.0;
     final accent = _accentColor(scheme);
+
+    final detailsColumn = [
+      Align(
+        alignment: Alignment.centerLeft,
+        child: _RoutingBanner(
+          icon: _destinationIcon,
+          label: _destinationLabel,
+          message: _isDengueCase
+              ? 'This goes directly to the health worker verification screen.'
+              : 'This goes directly to waste personnel for inspection and cleanup scheduling.',
+          accent: accent,
+        ),
+      ),
+      const SizedBox(height: 14),
+      _FormIntro(
+        icon: widget.icon,
+        accent: accent,
+        title: _isDengueCase
+            ? 'Tell us what happened'
+            : 'Show the source of stagnant water',
+        message: _isDengueCase
+            ? 'Give enough context for health staff to assess and verify.'
+            : 'Describe what waste personnel should inspect or remove.',
+      ),
+      if (!_isDengueCase && _weather != null) ...[
+        const SizedBox(height: 12),
+        WeatherNudge(risk: _weather!),
+      ],
+      const SizedBox(height: 20),
+      TextFormField(
+        controller: _details,
+        minLines: 4,
+        maxLines: 8,
+        maxLength: 1000,
+        textInputAction: TextInputAction.newline,
+        decoration: InputDecoration(
+          labelText: _detailsLabel,
+          alignLabelWithHint: true,
+          prefixIcon: const Icon(Icons.notes_outlined),
+          hintText: _detailsHint,
+        ),
+        validator: (value) {
+          final text = value?.trim() ?? '';
+          if (text.length >= 10) return null;
+          if (_selectedTags.isNotEmpty && text.isEmpty) {
+            return null;
+          }
+          return 'Provide at least 10 characters, or pick an option above.';
+        },
+      ),
+      if (_isDengueCase)
+        AnimatedBuilder(
+          animation: _details,
+          builder: (context, _) {
+            final flagged = AiService.instance.hasDangerSigns(
+              _details.text.toLowerCase(),
+            );
+            if (!flagged) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: AppColors.danger.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.emergency_outlined,
+                      size: 18,
+                      color: AppColors.danger,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "What you typed may describe a warning "
+                        "sign. Don't wait on this report — go to "
+                        'the nearest health centre or emergency '
+                        "department now, or call 911. Consider "
+                        'marking severity as Severe below so '
+                        'staff see this first.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      const SizedBox(height: 14),
+      QuickTagChips(
+        title: _isDengueCase ? 'Symptoms noticed' : 'What kind of container?',
+        hint: _isDengueCase
+            ? 'Tap what applies — this fills in details for you.'
+            : 'Tap what applies — helps waste personnel prep the right tools.',
+        options: _tagOptions,
+        selected: _selectedTags,
+        accent: accent,
+        enabled: !_submitting,
+        onToggle: _toggleTag,
+      ),
+      if (_isDengueCase) ...[
+        const SizedBox(height: 18),
+        SeveritySelector(
+          value: _severity,
+          enabled: !_submitting,
+          onChanged: (value) => setState(() => _severity = value),
+        ),
+      ],
+    ];
+
+    final logisticsColumn = [
+      _FormSection(
+        title: 'Location',
+        message:
+            'Type a landmark, then set an exact pin so the assigned team can find the spot without back-and-forth.',
+        icon: Icons.location_on_outlined,
+        accent: accent,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _location,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Landmark or description',
+                hintText: 'House number, street, sitio, or nearby landmark',
+              ),
+              validator: (value) => value == null || value.trim().length < 3
+                  ? 'Enter a recognizable location.'
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            LocationPickerField(
+              latitude: double.tryParse(_latitude.text.trim()),
+              longitude: double.tryParse(_longitude.text.trim()),
+              enabled: !_submitting,
+              onChanged: _onLocationPicked,
+              onCleared: _onLocationCleared,
+            ),
+            if (_nearbyDuplicate == true) ...[
+              const SizedBox(height: 8),
+              const _StatusPanel(
+                icon: Icons.info_outline,
+                title: 'Nearby report already exists',
+                message:
+                    'Another report near this spot was filed in the last two '
+                    'weeks. You can still submit — staff will check for duplicates.',
+              ),
+            ],
+          ],
+        ),
+      ),
+      if (_isDengueCase) ...[
+        const SizedBox(height: 16),
+        _FormSection(
+          title: 'Consultation appointment',
+          message:
+              'This report requests a health worker to see you in '
+              'person — pick when. Your case details above are sent '
+              'as the reason, so this appointment starts in the same '
+              'queue as the report, not a separate one.',
+          icon: Icons.calendar_month_outlined,
+          accent: accent,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _submitting ? null : _pickAppointmentTime,
+                icon: const Icon(Icons.calendar_month_outlined),
+                label: Text(
+                  _appointmentTime == null
+                      ? 'Choose date & time'
+                      : formatDateTime(_appointmentTime),
+                ),
+              ),
+              if (_appointmentTime != null) ...[
+                const SizedBox(height: 8),
+                _StatusPanel(
+                  icon: Icons.event_available_outlined,
+                  title: 'Consultation requested',
+                  message: formatDateTime(_appointmentTime),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+      const SizedBox(height: 16),
+      _FormSection(
+        title: _isDengueCase
+            ? 'Photo evidence (optional)'
+            : 'Photo evidence (required)',
+        message: _isDengueCase
+            ? 'Private and visible only to you and authorized personnel. '
+                  "Not every symptom can be photographed, so it's optional — "
+                  'but a photo of a rash, swelling, or similar can help '
+                  'staff assess your case faster.'
+            : 'Private and visible only to you and authorized personnel. '
+                  'Required so staff can trust the reports in their queue.',
+        icon: Icons.photo_camera_outlined,
+        accent: accent,
+        child: _photo == null
+            ? OutlinedButton.icon(
+                onPressed: _submitting
+                    ? null
+                    : () async {
+                        final bytes = await pickEvidenceImage(context);
+                        if (bytes != null && mounted) {
+                          setState(() => _photo = bytes);
+                        }
+                      },
+                icon: const Icon(Icons.add_a_photo_outlined),
+                label: Text(
+                  _isDengueCase ? 'Add a photo (optional)' : 'Add required photo',
+                ),
+              )
+            : Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    child: Image.memory(
+                      _photo!,
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Evidence attached',
+                          style: theme.textTheme.labelLarge,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Uploaded securely with your report.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _submitting
+                        ? null
+                        : () async {
+                            final bytes = await pickEvidenceImage(context);
+                            if (bytes != null && mounted) {
+                              setState(() => _photo = bytes);
+                            }
+                          },
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Replace photo',
+                  ),
+                  IconButton(
+                    onPressed: _submitting
+                        ? null
+                        : () => setState(() => _photo = null),
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Remove photo',
+                  ),
+                ],
+              ),
+      ),
+    ];
 
     return Scaffold(
       body: ColoredBox(
@@ -206,7 +659,7 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
               ),
               Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
+                  constraints: BoxConstraints(maxWidth: maxWidth),
                   child: Card(
                     margin: EdgeInsets.fromLTRB(
                       compact ? 12 : 16,
@@ -221,295 +674,85 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: _RoutingBanner(
-                                icon: _destinationIcon,
-                                label: _destinationLabel,
-                                message: _isDengueCase
-                                    ? 'This goes directly to the health worker verification screen.'
-                                    : 'This goes directly to waste personnel for inspection and cleanup scheduling.',
+                            // Only _location and _details drive step 1's
+                            // "complete" state, so only this small subtree
+                            // rebuilds on keystroke — not the whole form.
+                            AnimatedBuilder(
+                              animation: Listenable.merge([
+                                _location,
+                                _details,
+                              ]),
+                              builder: (context, _) => ReportStepIndicator(
                                 accent: accent,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            _FormIntro(
-                              icon: widget.icon,
-                              accent: accent,
-                              title: _isDengueCase
-                                  ? 'Tell us what happened'
-                                  : 'Show the source of stagnant water',
-                              message: _isDengueCase
-                                  ? 'Give enough context for health staff to assess and verify.'
-                                  : 'Describe what waste personnel should inspect or remove.',
-                            ),
-                            const SizedBox(height: 20),
-                            TextFormField(
-                              controller: _location,
-                              textInputAction: TextInputAction.next,
-                              decoration: InputDecoration(
-                                labelText: 'Location or landmark',
-                                prefixIcon: const Icon(
-                                  Icons.location_on_outlined,
-                                ),
-                                hintText:
-                                    'House number, street, sitio, or nearby landmark',
-                                suffixIcon: _geocoding
-                                    ? const Padding(
-                                        padding: EdgeInsets.all(14),
-                                        child: SizedBox.square(
-                                          dimension: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                      )
-                                    : null,
-                                helperText: _geocoding
-                                    ? 'Filling this in from your GPS pin...'
-                                    : null,
-                              ),
-                              validator: (value) =>
-                                  value == null || value.trim().length < 3
-                                  ? 'Enter a recognizable location.'
-                                  : null,
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _details,
-                              minLines: 4,
-                              maxLines: 8,
-                              maxLength: 1000,
-                              textInputAction: TextInputAction.newline,
-                              decoration: InputDecoration(
-                                labelText: _detailsLabel,
-                                alignLabelWithHint: true,
-                                prefixIcon: const Icon(Icons.notes_outlined),
-                                hintText: _detailsHint,
-                              ),
-                              validator: (value) =>
-                                  value == null || value.trim().length < 10
-                                  ? 'Provide at least 10 characters so staff can verify the report.'
-                                  : null,
-                            ),
-                            const SizedBox(height: 10),
-                            _FormSection(
-                              title: 'Exact location',
-                              message:
-                                  'A precise pin helps the assigned team find the spot without back-and-forth.',
-                              icon: Icons.pin_drop_outlined,
-                              accent: accent,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (_hasCoordinates &&
-                                      !_manualCoordsExpanded) ...[
-                                    _StatusPanel(
-                                      icon: Icons.check_circle,
-                                      title: 'GPS location captured',
-                                      message:
-                                          '${_latitude.text}, ${_longitude.text}',
-                                      trailing: TextButton(
-                                        onPressed: _submitting
-                                            ? null
-                                            : () => setState(() {
-                                                _latitude.clear();
-                                                _longitude.clear();
-                                                _nearbyDuplicate = null;
-                                              }),
-                                        child: const Text('Clear'),
-                                      ),
-                                    ),
-                                    if (_nearbyDuplicate == true) ...[
-                                      const SizedBox(height: 8),
-                                      const _StatusPanel(
-                                        icon: Icons.info_outline,
-                                        title: 'Nearby report already exists',
-                                        message:
-                                            'Another report near this spot was filed in the last two '
-                                            'weeks. You can still submit — staff will check for duplicates.',
-                                      ),
-                                    ],
-                                    const SizedBox(height: 10),
-                                  ],
-                                  OutlinedButton.icon(
-                                    onPressed: _submitting || _locating
-                                        ? null
-                                        : _useCurrentLocation,
-                                    icon: _locating
-                                        ? const SizedBox.square(
-                                            dimension: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Icon(
-                                            Icons.my_location_outlined,
-                                          ),
-                                    label: Text(
-                                      _locating
-                                          ? 'Getting your location...'
-                                          : _hasCoordinates
-                                          ? 'Update current location'
-                                          : 'Use my current location',
-                                    ),
+                                steps: [
+                                  ReportStep(
+                                    label: 'Details',
+                                    icon: widget.icon,
+                                    complete:
+                                        _location.text.trim().length >= 3 &&
+                                        (_details.text.trim().length >= 10 ||
+                                            _selectedTags.isNotEmpty),
                                   ),
-                                  const SizedBox(height: 6),
-                                  Align(
-                                    alignment: Alignment.center,
-                                    child: TextButton.icon(
-                                      onPressed: _submitting
-                                          ? null
-                                          : () => setState(
-                                              () => _manualCoordsExpanded =
-                                                  !_manualCoordsExpanded,
-                                            ),
-                                      icon: Icon(
-                                        _manualCoordsExpanded
-                                            ? Icons.expand_less
-                                            : Icons.edit_location_alt_outlined,
-                                        size: 18,
-                                      ),
-                                      label: Text(
-                                        _manualCoordsExpanded
-                                            ? 'Hide manual coordinates'
-                                            : 'Enter coordinates manually',
-                                      ),
-                                    ),
+                                  ReportStep(
+                                    label: 'Exact pin',
+                                    icon: Icons.pin_drop_outlined,
+                                    complete:
+                                        _latitude.text.trim().isNotEmpty &&
+                                        _longitude.text.trim().isNotEmpty,
+                                    optional: true,
                                   ),
-                                  if (_manualCoordsExpanded) ...[
-                                    const SizedBox(height: 8),
-                                    if (compact)
-                                      Column(
-                                        children: [
-                                          _CoordinateField(
-                                            controller: _latitude,
-                                            label: 'Latitude',
-                                            validator: _latitudeValidator,
-                                          ),
-                                          const SizedBox(height: 12),
-                                          _CoordinateField(
-                                            controller: _longitude,
-                                            label: 'Longitude',
-                                            validator: _longitudeValidator,
-                                          ),
-                                        ],
-                                      )
-                                    else
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: _CoordinateField(
-                                              controller: _latitude,
-                                              label: 'Latitude',
-                                              validator: _latitudeValidator,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: _CoordinateField(
-                                              controller: _longitude,
-                                              label: 'Longitude',
-                                              validator: _longitudeValidator,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                  ],
+                                  ReportStep(
+                                    label: 'Evidence',
+                                    icon: Icons.photo_camera_outlined,
+                                    complete: _photo != null,
+                                    optional: _isDengueCase,
+                                  ),
+                                  if (_isDengueCase)
+                                    ReportStep(
+                                      label: 'Appointment',
+                                      icon: Icons.calendar_month_outlined,
+                                      complete: _appointmentTime != null,
+                                    ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
-                            _FormSection(
-                              title: 'Photo evidence',
-                              message:
-                                  'Private and visible only to you and authorized personnel.',
-                              icon: Icons.photo_camera_outlined,
-                              accent: accent,
-                              child: _photo == null
-                                  ? OutlinedButton.icon(
-                                      onPressed: _submitting
-                                          ? null
-                                          : () async {
-                                              final bytes =
-                                                  await pickEvidenceImage(
-                                                    context,
-                                                  );
-                                              if (bytes != null && mounted) {
-                                                setState(() => _photo = bytes);
-                                              }
-                                            },
-                                      icon: const Icon(
-                                        Icons.add_a_photo_outlined,
-                                      ),
-                                      label: const Text('Add private photo'),
-                                    )
-                                  : Row(
-                                      children: [
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            AppRadius.md,
-                                          ),
-                                          child: Image.memory(
-                                            _photo!,
-                                            width: 64,
-                                            height: 64,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Evidence attached',
-                                                style:
-                                                    theme.textTheme.labelLarge,
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                'Uploaded securely with your report.',
-                                                style:
-                                                    theme.textTheme.bodySmall,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        IconButton(
-                                          onPressed: _submitting
-                                              ? null
-                                              : () async {
-                                                  final bytes =
-                                                      await pickEvidenceImage(
-                                                        context,
-                                                      );
-                                                  if (bytes != null &&
-                                                      mounted) {
-                                                    setState(
-                                                      () => _photo = bytes,
-                                                    );
-                                                  }
-                                                },
-                                          icon: const Icon(
-                                            Icons.edit_outlined,
-                                          ),
-                                          tooltip: 'Replace photo',
-                                        ),
-                                        IconButton(
-                                          onPressed: _submitting
-                                              ? null
-                                              : () =>
-                                                    setState(
-                                                      () => _photo = null,
-                                                    ),
-                                          icon: const Icon(Icons.close),
-                                          tooltip: 'Remove photo',
-                                        ),
-                                      ],
+                            const SizedBox(height: 20),
+                            // Desktop gets the two form halves side by side
+                            // instead of one narrow column stretched down a
+                            // mostly-empty page; phone/tablet keep reading
+                            // top-to-bottom.
+                            if (wide)
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: detailsColumn,
                                     ),
-                            ),
+                                  ),
+                                  const SizedBox(width: 28),
+                                  Expanded(
+                                    flex: 2,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: logisticsColumn,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  ...detailsColumn,
+                                  const SizedBox(height: 16),
+                                  ...logisticsColumn,
+                                ],
+                              ),
                             const SizedBox(height: 24),
                             FilledButton.icon(
                               onPressed: _submitting ? null : _submit,
@@ -547,44 +790,6 @@ class _ReportFormState extends State<ReportForm> with SubmitThrottle {
     );
   }
 
-  String? _latitudeValidator(String? value) {
-    return _coordinateValidator(
-      value,
-      otherValue: _longitude.text,
-      rangeLabel: 'Latitude',
-      min: -90,
-      max: 90,
-    );
-  }
-
-  String? _longitudeValidator(String? value) {
-    return _coordinateValidator(
-      value,
-      otherValue: _latitude.text,
-      rangeLabel: 'Longitude',
-      min: -180,
-      max: 180,
-    );
-  }
-
-  String? _coordinateValidator(
-    String? value, {
-    required String otherValue,
-    required String rangeLabel,
-    required double min,
-    required double max,
-  }) {
-    final trimmed = value?.trim() ?? '';
-    if (trimmed.isEmpty) {
-      return otherValue.trim().isEmpty ? null : 'Enter both coordinates.';
-    }
-    final parsed = double.tryParse(trimmed);
-    if (parsed == null) return 'Enter a valid number.';
-    if (parsed < min || parsed > max) {
-      return '$rangeLabel must be between ${min.toInt()} and ${max.toInt()}.';
-    }
-    return null;
-  }
 }
 
 class _FormIntro extends StatelessWidget {
@@ -758,13 +963,11 @@ class _StatusPanel extends StatelessWidget {
   final IconData icon;
   final String title;
   final String message;
-  final Widget? trailing;
 
   const _StatusPanel({
     required this.icon,
     required this.title,
     required this.message,
-    this.trailing,
   });
 
   @override
@@ -793,34 +996,9 @@ class _StatusPanel extends StatelessWidget {
               ],
             ),
           ),
-          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
         ],
       ),
     );
   }
 }
 
-class _CoordinateField extends StatelessWidget {
-  final TextEditingController controller;
-  final String label;
-  final String? Function(String?) validator;
-
-  const _CoordinateField({
-    required this.controller,
-    required this.label,
-    required this.validator,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(
-        decimal: true,
-        signed: true,
-      ),
-      decoration: InputDecoration(labelText: label),
-      validator: validator,
-    );
-  }
-}

@@ -6,7 +6,6 @@ import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
-import '../widgets/notifications_panel.dart';
 import '../widgets/section_header.dart';
 import '../widgets/shared_widgets.dart';
 
@@ -156,11 +155,6 @@ class _WasteManagementDashboardState extends State<WasteManagementDashboard> {
               action: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    onPressed: () => openNotificationsPanel(context),
-                    icon: const Icon(Icons.notifications_outlined),
-                    tooltip: 'Notifications',
-                  ),
                   IconButton(
                     onPressed: _loading ? null : _load,
                     tooltip: 'Refresh requests',
@@ -414,6 +408,15 @@ class _RequestCard extends StatelessWidget {
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                if (item['latitude'] != null && item['longitude'] != null)
+                  FilledButton.icon(
+                    onPressed: () => openNavigationTo(
+                      item['latitude'] as num,
+                      item['longitude'] as num,
+                    ),
+                    icon: const Icon(Icons.directions, size: 18),
+                    label: const Text('Navigate'),
+                  ),
                 OutlinedButton.icon(
                   onPressed: busy ? null : onEvidence,
                   icon: const Icon(Icons.visibility_outlined, size: 18),

@@ -9,9 +9,9 @@ class ReportCaseScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ReportForm(
       reportType: 'dengue_case',
-      title: 'Report a suspected dengue case',
+      title: 'Report a dengue case',
       description:
-          'Send details to the Barangay Health Center for assessment. This report is not a diagnosis and does not replace urgent care.',
+          'Self-report your own symptoms, or share what you noticed in someone else. Sent to the Barangay Health Center for assessment. This report is not a diagnosis and does not replace urgent care.',
       icon: Icons.medical_information_outlined,
     );
   }

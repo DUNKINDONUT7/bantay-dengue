@@ -5,8 +5,11 @@
 // — so checking updates doesn't cost a full navigation round-trip, and
 // whatever page you were on is still right there underneath when you close
 // it.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
@@ -14,6 +17,121 @@ import '../services/database_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
 import 'liquid_glass.dart';
+
+/// The bell + unread badge, meant to appear exactly once per page — not
+/// tucked inside the sidebar (which disappears on mobile) or duplicated
+/// per-screen. `RoleShell` places one copy of this in every layout
+/// (mobile/tablet/web) so it's on screen no matter which page or viewport
+/// a resident is on. The badge shows a real number (not just a dot) and
+/// updates live via `DatabaseService.watchNotifications` — see
+/// supabase/NOTIFICATIONS_REALTIME.sql.
+class NotificationBellButton extends StatefulWidget {
+  final double iconSize;
+  final Color? iconColor;
+
+  const NotificationBellButton({
+    super.key,
+    this.iconSize = 22,
+    this.iconColor,
+  });
+
+  @override
+  State<NotificationBellButton> createState() =>
+      _NotificationBellButtonState();
+}
+
+class _NotificationBellButtonState extends State<NotificationBellButton> {
+  int _unread = 0;
+  RealtimeChannel? _channel;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+    _channel = DatabaseService.instance.watchNotifications(_scheduleRefresh);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _channel?.unsubscribe();
+    super.dispose();
+  }
+
+  void _scheduleRefresh() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), _refresh);
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final count = await DatabaseService.instance
+          .fetchUnreadNotificationCount();
+      if (mounted) setState(() => _unread = count);
+    } catch (_) {
+      // The badge is a convenience, not a source of truth — if this fails,
+      // the bell still opens the real (authoritative) list on tap.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final badgeText = _unread > 9 ? '9+' : '$_unread';
+    return SizedBox(
+      width: widget.iconSize + 20,
+      height: widget.iconSize + 20,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          IconButton(
+            onPressed: () async {
+              await openNotificationsPanel(context);
+              _refresh();
+            },
+            icon: Icon(
+              Icons.notifications_outlined,
+              size: widget.iconSize,
+              color: widget.iconColor,
+            ),
+            tooltip: 'Notifications',
+            visualDensity: VisualDensity.compact,
+          ),
+          if (_unread > 0)
+            Positioned(
+              top: 2,
+              right: 2,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  constraints: const BoxConstraints(
+                    minWidth: 16,
+                    minHeight: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: Border.all(color: AppColors.surface, width: 1.5),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    badgeText,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 Future<void> openNotificationsPanel(BuildContext context) {
   final compact = MediaQuery.sizeOf(context).width < 600;
@@ -119,6 +237,10 @@ class _NotificationsPanelState extends State<_NotificationsPanel> {
         return Icons.fact_check_outlined;
       case 'waste':
         return Icons.delete_sweep_outlined;
+      case 'community_comment':
+        return Icons.chat_bubble_outline;
+      case 'community_reaction':
+        return Icons.favorite_outline;
       default:
         return Icons.notifications_outlined;
     }
@@ -166,12 +288,26 @@ class _NotificationsPanelState extends State<_NotificationsPanel> {
         switch (role) {
           case UserRole.civilian:
             return '/civilian/waste';
+          // Waste collection is operated by waste personnel only — a
+          // doctor has no waste screen to land on.
           case UserRole.doctor:
-            return '/doctor/waste';
+            return null;
           case UserRole.wastePersonnel:
             return '/waste-management';
           case UserRole.admin:
             return '/admin/waste';
+        }
+      case 'community_comment':
+      case 'community_reaction':
+        // Resident-only feature — only residents and admin (moderation)
+        // have a community route to land on at all.
+        switch (role) {
+          case UserRole.civilian:
+            return '/civilian/community';
+          case UserRole.admin:
+            return '/admin/community';
+          default:
+            return null;
         }
       default:
         return null;

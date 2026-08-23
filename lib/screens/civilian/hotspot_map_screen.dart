@@ -33,6 +33,11 @@ class _HotspotMapScreenState extends State<HotspotMapScreen> {
   Object? _error;
   bool _loading = true;
   bool _locating = false;
+  // The screen's own subtitle already says "avoid drawing conclusions from
+  // unverified reports" — defaulting this off is what actually enforces
+  // that instead of leaving it as text nobody reads while pending-status
+  // pins render in the same view as curated hotspot circles.
+  bool _showUnverifiedReports = false;
   Map<String, dynamic>? _selected;
   Map<String, dynamic>? _selectedReport;
 
@@ -150,7 +155,49 @@ class _HotspotMapScreenState extends State<HotspotMapScreen> {
     );
   }
 
+  /// Verified dengue-case reports already loaded in `_reports` within
+  /// [radiusMeters] of a point — reuses `Geolocator.distanceBetween` (already
+  /// a dependency here) instead of hand-rolling haversine math client-side.
+  /// Counts 'verified' and 'resolved' alike: both mean the case was
+  /// confirmed, resolution is just the later step in that same workflow.
+  List<Map<String, dynamic>> _nearbyVerifiedCases(
+    double latitude,
+    double longitude, {
+    double radiusMeters = 300,
+  }) {
+    return _reports.where((row) {
+      if (row['report_type'] != 'dengue_case') return false;
+      if (!['verified', 'resolved'].contains(row['status'])) return false;
+      final lat = row['latitude'] as num?;
+      final lng = row['longitude'] as num?;
+      if (lat == null || lng == null) return false;
+      final distance = Geolocator.distanceBetween(
+        latitude,
+        longitude,
+        lat.toDouble(),
+        lng.toDouble(),
+      );
+      return distance <= radiusMeters;
+    }).toList();
+  }
+
+  /// Simple, transparent thresholds — not a scored model. A health
+  /// worker/admin still picks the final risk level in the dialog; this is
+  /// only a starting suggestion tied to the same nearby-case count the
+  /// auto-fill button computes, so the two never disagree with each other.
+  String _suggestedRiskLevel(int nearbyCaseCount) {
+    if (nearbyCaseCount >= 6) return 'high';
+    if (nearbyCaseCount >= 3) return 'medium';
+    return 'low';
+  }
+
   Future<void> _saveHotspot() async {
+    // Captured before the dialog can reassign `risk` (auto-fill button or
+    // the dropdown itself) — this is what risk_level actually was before
+    // this edit, needed to detect a transition INTO 'high', not just
+    // "is currently high" (which would re-fire on every unrelated edit to
+    // an already-high hotspot).
+    final previousRiskLevel = _selected?['risk_level'] as String?;
     final barangay = TextEditingController(
       text: '${_selected?['barangay'] ?? ''}',
     );
@@ -213,8 +260,41 @@ class _HotspotMapScreenState extends State<HotspotMapScreen> {
                       labelText: 'Verified case count',
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        final lat = double.tryParse(latitude.text);
+                        final lng = double.tryParse(longitude.text);
+                        if (lat == null || lng == null) {
+                          showMessage(
+                            context,
+                            'Enter valid latitude/longitude first.',
+                            error: true,
+                          );
+                          return;
+                        }
+                        final count = _nearbyVerifiedCases(lat, lng).length;
+                        setDialogState(() {
+                          cases.text = '$count';
+                          risk = _suggestedRiskLevel(count);
+                        });
+                      },
+                      icon: const Icon(Icons.auto_awesome, size: 16),
+                      label: const Text(
+                        'Auto-fill from verified reports within 300m',
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
+                  // Keyed to `risk` so it remounts (and re-reads
+                  // `initialValue`) when the auto-fill button changes
+                  // `risk` programmatically — DropdownButtonFormField's
+                  // initialValue is otherwise only honored on first build,
+                  // same as any Form field's initial value.
                   DropdownButtonFormField<String>(
+                    key: ValueKey('risk-$risk'),
                     initialValue: risk,
                     decoration: const InputDecoration(
                       labelText: 'Risk classification',
@@ -273,6 +353,49 @@ class _HotspotMapScreenState extends State<HotspotMapScreen> {
             longitude: lng,
           );
           if (mounted) showMessage(context, 'Hotspot saved.');
+
+          // Only on a genuine transition INTO high — not on every edit to
+          // a hotspot that was already high, and not on downgrades.
+          if (risk == 'high' && previousRiskLevel != 'high') {
+            final reporterIds = _nearbyVerifiedCases(lat, lng)
+                .map((r) => r['reporter_id'] as String?)
+                .whereType<String>()
+                .toSet();
+            if (reporterIds.isNotEmpty) {
+              try {
+                await DatabaseService.instance.sendOutbreakAlerts(
+                  residentIds: reporterIds,
+                  barangay: barangay.text.trim(),
+                  riskLevel: risk,
+                );
+                await DatabaseService.instance.logActivity(
+                  'outbreak_alert_sent',
+                  {
+                    'barangay': barangay.text.trim(),
+                    'risk_level': risk,
+                    'recipient_count': reporterIds.length,
+                  },
+                );
+                if (mounted) {
+                  showMessage(
+                    context,
+                    'Outbreak alert sent to ${reporterIds.length} nearby resident(s).',
+                  );
+                }
+              } catch (error) {
+                // The hotspot itself already saved successfully — a failed
+                // alert send shouldn't read as a failed save.
+                if (mounted) {
+                  showMessage(
+                    context,
+                    'Hotspot saved, but outbreak alerts could not be sent: ${errorMessage(error)}',
+                    error: true,
+                  );
+                }
+              }
+            }
+          }
+
           await _load();
         } catch (error) {
           if (mounted) showMessage(context, errorMessage(error), error: true);
@@ -327,6 +450,7 @@ class _HotspotMapScreenState extends State<HotspotMapScreen> {
                     label: _weather!.label,
                     summary: _weather!.summary,
                     dailyRainMm: _weather!.dailyRainMm,
+                    temperatureC: _weather!.temperatureC,
                   ),
                 ),
               if (_error != null)
@@ -463,7 +587,13 @@ class _HotspotMapScreenState extends State<HotspotMapScreen> {
             // reports for a resident, all reports for staff), so this
             // never surfaces another resident's report to a resident.
             MarkerLayer(
-              markers: _reports.map((row) {
+              markers: _reports
+                  .where(
+                    (row) =>
+                        _showUnverifiedReports ||
+                        ['verified', 'resolved'].contains(row['status']),
+                  )
+                  .map((row) {
                 final color = statusColor(
                   '${row['status']}',
                   Theme.of(context).colorScheme,
@@ -566,6 +696,18 @@ class _HotspotMapScreenState extends State<HotspotMapScreen> {
                 onPressed: expanded
                     ? () => Navigator.of(context).maybePop()
                     : _openFullscreen,
+              ),
+              const SizedBox(height: 8),
+              LiquidGlassIconButton(
+                icon: _showUnverifiedReports
+                    ? Icons.visibility_outlined
+                    : Icons.verified_outlined,
+                tooltip: _showUnverifiedReports
+                    ? 'Showing all reports — tap to show verified only'
+                    : 'Showing verified reports only — tap to show all',
+                onPressed: () => setState(
+                  () => _showUnverifiedReports = !_showUnverifiedReports,
+                ),
               ),
             ],
           ),

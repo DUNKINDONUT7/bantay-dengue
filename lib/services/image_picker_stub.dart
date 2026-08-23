@@ -29,6 +29,7 @@ Future<Uint8List?> pickEvidenceImage(BuildContext context) async {
       source: source,
       imageQuality: 82,
       maxWidth: 1920,
+      maxHeight: 1920,
     );
     return file?.readAsBytes();
   } catch (error) {

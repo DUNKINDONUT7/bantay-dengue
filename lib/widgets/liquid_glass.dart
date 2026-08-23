@@ -25,32 +25,42 @@ class LiquidGlass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            borderRadius: borderRadius,
-            border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withValues(alpha: 0.62),
-                AppColors.background.withValues(alpha: 0.42),
+    // RepaintBoundary isolates the blur into its own compositor layer.
+    // BackdropFilter is the single most expensive thing this app draws
+    // (Flutter web has no Impeller acceleration, so every blurred pixel is
+    // a real per-frame cost) — without this boundary, anything that makes a
+    // sibling widget repaint (a text cursor blinking, a hovered nav item, a
+    // page transition) forces Flutter to redo the blur too, even though the
+    // blur itself never changed. Wrapping it here means it paints once and
+    // is reused as a texture until this widget's own contents change.
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              borderRadius: borderRadius,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: 0.62),
+                  AppColors.background.withValues(alpha: 0.42),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
               ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            child: child,
           ),
-          child: child,
         ),
       ),
     );

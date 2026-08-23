@@ -1,7 +1,10 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../services/database_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/ui_helpers.dart';
 import '../../widgets/edit_report_screen.dart';
 import '../../widgets/section_header.dart';
@@ -36,6 +39,51 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _viewEvidence(Map<String, dynamic> report) async {
+    final path = report['photo_url'] as String?;
+    final signedUrl = await DatabaseService.instance.createEvidenceUrl(
+      bucket: 'report-evidence',
+      path: path,
+    );
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Your submitted evidence'),
+        content: SizedBox(
+          width: min(560, MediaQuery.sizeOf(context).width - 48),
+          child: signedUrl == null
+              ? Text(
+                  path == null
+                      ? 'No photo evidence was attached to this report.'
+                      : 'The private preview could not be created. Try again shortly.',
+                )
+              : ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  child: Image.network(
+                    signedUrl,
+                    height: 320,
+                    width: double.infinity,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const SizedBox(
+                      height: 120,
+                      child: Center(
+                        child: Text('Evidence could not be displayed.'),
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _edit(Map<String, dynamic> report) async {
@@ -145,18 +193,30 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
                                   '${report['status'] ?? 'pending'}',
                                 ),
                               ),
-                              if (isPending)
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    12,
-                                    0,
-                                    12,
-                                    8,
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.end,
-                                    children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  8,
+                                ),
+                                child: Wrap(
+                                  alignment: WrapAlignment.end,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () => _viewEvidence(report),
+                                      icon: const Icon(
+                                        Icons.visibility_outlined,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        report['photo_url'] == null
+                                            ? 'No evidence'
+                                            : 'View evidence',
+                                      ),
+                                    ),
+                                    if (isPending) ...[
                                       TextButton.icon(
                                         onPressed: () => _edit(report),
                                         icon: const Icon(
@@ -165,7 +225,6 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
                                         ),
                                         label: const Text('Edit'),
                                       ),
-                                      const SizedBox(width: 4),
                                       TextButton.icon(
                                         onPressed: () => _delete(report),
                                         icon: Icon(
@@ -185,8 +244,9 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
                                         ),
                                       ),
                                     ],
-                                  ),
+                                  ],
                                 ),
+                              ),
                             ],
                           ),
                         ),

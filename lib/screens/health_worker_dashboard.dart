@@ -7,7 +7,6 @@ import '../theme/app_theme.dart';
 import '../utils/ui_helpers.dart';
 import '../widgets/analytics_widgets.dart';
 import '../widgets/dengue_stats_card.dart';
-import '../widgets/notifications_panel.dart';
 import '../widgets/section_header.dart';
 import '../widgets/shared_widgets.dart';
 
@@ -53,6 +52,50 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
     }
   }
 
+  static const _monthAbbrev = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// Buckets already-fetched verified/resolved reports into [weeks] weekly
+  /// counts, oldest first — a display gap fix (WeeklyTrendChart), not a new
+  /// data source. No new query: `_reports` is already loaded for the status
+  /// donut above.
+  ({List<int> counts, List<String> labels}) _weeklyVerifiedTrend(
+    List<Map<String, dynamic>> reports, {
+    int weeks = 8,
+  }) {
+    final today = DateTime.now();
+    final startOfThisWeek = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).subtract(Duration(days: today.weekday - 1));
+    final weekStarts = [
+      for (var i = weeks - 1; i >= 0; i--)
+        startOfThisWeek.subtract(Duration(days: i * 7)),
+    ];
+    final counts = List<int>.filled(weeks, 0);
+    for (final report in reports) {
+      if (!['verified', 'resolved'].contains(report['status'])) continue;
+      final created = DateTime.tryParse('${report['created_at']}');
+      if (created == null) continue;
+      for (var i = 0; i < weekStarts.length; i++) {
+        final start = weekStarts[i];
+        final end = start.add(const Duration(days: 7));
+        if (!created.isBefore(start) && created.isBefore(end)) {
+          counts[i]++;
+          break;
+        }
+      }
+    }
+    final labels = [
+      for (final start in weekStarts)
+        '${_monthAbbrev[start.month - 1]} ${start.day}',
+    ];
+    return (counts: counts, labels: labels);
+  }
+
   @override
   Widget build(BuildContext context) {
     final pending = _reports
@@ -68,6 +111,7 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
       final status = '${report['status'] ?? 'pending'}';
       statusCounts[status] = (statusCounts[status] ?? 0) + 1;
     }
+    final weeklyTrend = _weeklyVerifiedTrend(_reports);
     final topHotspots = _hotspots
         .take(5)
         .map(
@@ -92,11 +136,6 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
                 action: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      onPressed: () => openNotificationsPanel(context),
-                      icon: const Icon(Icons.notifications_outlined),
-                      tooltip: 'Notifications',
-                    ),
                     IconButton(
                       onPressed: _load,
                       icon: const Icon(Icons.refresh),
@@ -203,6 +242,17 @@ class _HealthWorkerDashboardState extends State<HealthWorkerDashboard> {
                       ],
                     );
                   },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: AnalyticsPanel(
+                  title: 'Verified cases — last 8 weeks',
+                  subtitle: 'local, not WHO figures',
+                  child: WeeklyTrendChart(
+                    counts: weeklyTrend.counts,
+                    labels: weeklyTrend.labels,
+                  ),
                 ),
               ),
               const SectionHeader(

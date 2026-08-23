@@ -1,10 +1,13 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/database_service.dart';
+import '../../services/geocoding_service.dart';
 import '../../services/image_picker_stub.dart';
+import '../../services/location_helper.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/ui_helpers.dart';
 import '../../widgets/section_header.dart';
@@ -22,7 +25,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _reportCount = 0;
   int _appointmentCount = 0;
   int _wasteCount = 0;
+  int _newReports = 0;
+  int _newAppointments = 0;
+  int _newWaste = 0;
   List<_ActivityItem> _recentActivity = const [];
+
+  /// Already-fetched rows created in the last 7 days — same pattern as
+  /// dashboard_screen.dart's stat deltas, no new query.
+  int _sinceLastWeek(List<Map<String, dynamic>> items) {
+    final cutoff = DateTime.now().subtract(const Duration(days: 7));
+    return items.where((item) {
+      final createdAt = DateTime.tryParse('${item['created_at']}');
+      return createdAt != null && createdAt.isAfter(cutoff);
+    }).length;
+  }
 
   @override
   void initState() {
@@ -44,6 +60,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _reportCount = reports.length;
       _appointmentCount = appointments.length;
       _wasteCount = waste.length;
+      _newReports = _sinceLastWeek(reports);
+      _newAppointments = _sinceLastWeek(appointments);
+      _newWaste = _sinceLastWeek(waste);
 
       final combined = <_ActivityItem>[
         ...reports.map(
@@ -128,43 +147,113 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final name = TextEditingController(text: user.fullName);
     final phone = TextEditingController(text: user.phone ?? '');
     final barangay = TextEditingController(text: user.barangay ?? '');
+    // Declared outside the StatefulBuilder's builder callback on purpose —
+    // that callback re-runs on every setDialogState call, so a `var`
+    // declared inside it would reset to its initial value on every
+    // rebuild, silently undoing the very state change setDialogState just
+    // made.
+    var locating = false;
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit profile'),
-        content: SizedBox(
-          width: min(440, MediaQuery.sizeOf(context).width - 48),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: name,
-                decoration: const InputDecoration(labelText: 'Full name'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit profile'),
+            content: SizedBox(
+              width: min(440, MediaQuery.sizeOf(context).width - 48),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: name,
+                    decoration: const InputDecoration(labelText: 'Full name'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: phone,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(labelText: 'Phone'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: barangay,
+                    decoration: const InputDecoration(labelText: 'Barangay'),
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: locating
+                          ? null
+                          : () async {
+                              setDialogState(() => locating = true);
+                              try {
+                                final loc =
+                                    await LocationHelper.getCurrentLocation(
+                                      accuracy: LocationAccuracy.low,
+                                      timeLimit: const Duration(seconds: 8),
+                                    );
+                                final suggestion = await GeocodingService
+                                    .instance
+                                    .reverseGeocodeBarangay(
+                                      latitude: loc.latitude,
+                                      longitude: loc.longitude,
+                                    );
+                                if (suggestion != null) {
+                                  setDialogState(
+                                    () => barangay.text = suggestion,
+                                  );
+                                } else if (context.mounted) {
+                                  showMessage(
+                                    context,
+                                    "Couldn't determine a barangay for your current location.",
+                                    error: true,
+                                  );
+                                }
+                              } on LocationFailure catch (failure) {
+                                if (!context.mounted) return;
+                                final message = switch (failure.reason) {
+                                  LocationFailureReason.permissionDenied =>
+                                    'Location permission was denied.',
+                                  LocationFailureReason.serviceDisabled =>
+                                    'Turn on location services first.',
+                                  LocationFailureReason.other =>
+                                    "Couldn't get your location.",
+                                };
+                                showMessage(context, message, error: true);
+                              } finally {
+                                setDialogState(() => locating = false);
+                              }
+                            },
+                      icon: locating
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.my_location_outlined, size: 16),
+                      label: Text(
+                        locating
+                            ? 'Detecting…'
+                            : 'Use my current location',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: phone,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Phone'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: barangay,
-                decoration: const InputDecoration(labelText: 'Barangay'),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Save'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save'),
-          ),
-        ],
+          );
+        },
       ),
     );
     if (saved == true && name.text.trim().length >= 2) {
@@ -286,6 +375,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         value: _reportCount,
                                         label: 'Reports',
                                         loading: _loadingStats,
+                                        delta: _newReports,
                                       ),
                                     ),
                                     const SizedBox(
@@ -297,6 +387,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         value: _appointmentCount,
                                         label: 'Appointments',
                                         loading: _loadingStats,
+                                        delta: _newAppointments,
                                       ),
                                     ),
                                     const SizedBox(
@@ -308,6 +399,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         value: _wasteCount,
                                         label: 'Waste',
                                         loading: _loadingStats,
+                                        delta: _newWaste,
                                       ),
                                     ),
                                   ],
@@ -659,11 +751,13 @@ class _StatStripItem extends StatelessWidget {
   final int value;
   final String label;
   final bool loading;
+  final int delta;
 
   const _StatStripItem({
     required this.value,
     required this.label,
     required this.loading,
+    this.delta = 0,
   });
 
   @override
@@ -691,6 +785,15 @@ class _StatStripItem extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+        if (!loading && delta > 0)
+          Text(
+            '+$delta this week',
+            style: const TextStyle(
+              color: AppColors.success,
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
       ],
     );
   }

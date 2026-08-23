@@ -5,10 +5,12 @@ import '../config/supabase_config.dart';
 import '../models/user_model.dart';
 import '../screens/account_suspended_screen.dart';
 import '../screens/admin_dashboard.dart';
+import '../screens/admin_waste_overview_screen.dart';
 import '../screens/announcements_screen.dart';
 import '../screens/civilian/advisories_screen.dart';
 import '../screens/civilian/ai_chat_screen.dart';
 import '../screens/civilian/appointments_screen.dart';
+import '../screens/civilian/community_screen.dart';
 import '../screens/civilian/hotspot_map_screen.dart';
 import '../screens/civilian/profile_screen.dart';
 import '../screens/civilian/report_breeding_screen.dart';
@@ -17,7 +19,6 @@ import '../screens/civilian/report_history_screen.dart';
 import '../screens/civilian/report_hub_screen.dart';
 import '../screens/civilian/waste_collection_screen.dart';
 import '../screens/dashboard_screen.dart';
-import '../widgets/request_appointment_screen.dart';
 import '../widgets/request_waste_screen.dart';
 import '../screens/health_worker_dashboard.dart';
 import '../screens/login_screen.dart';
@@ -27,6 +28,7 @@ import '../screens/splash_screen.dart';
 import '../screens/staff_appointments_screen.dart';
 import '../screens/user_management_screen.dart';
 import '../screens/verification_queue_screen.dart';
+import '../screens/waste_collection_map_screen.dart';
 import '../screens/waste_management_dashboard.dart';
 import '../screens/waste_personnel_account_screen.dart';
 import '../services/auth_service.dart';
@@ -133,14 +135,12 @@ GoRouter createAppRouter() => GoRouter(
           builder: (_, __) => const AiChatScreen(),
         ),
         GoRoute(
+          path: '/civilian/community',
+          builder: (_, __) => const CommunityScreen(),
+        ),
+        GoRoute(
           path: '/civilian/appointments',
           builder: (_, __) => const AppointmentsScreen(),
-          routes: [
-            GoRoute(
-              path: 'new',
-              builder: (_, __) => const RequestAppointmentScreen(),
-            ),
-          ],
         ),
         GoRoute(
           path: '/civilian/map',
@@ -192,10 +192,6 @@ GoRouter createAppRouter() => GoRouter(
           builder: (_, __) => const HotspotMapScreen(),
         ),
         GoRoute(
-          path: '/doctor/waste',
-          builder: (_, __) => const WasteManagementDashboard(),
-        ),
-        GoRoute(
           path: '/doctor/advisories',
           builder: (_, __) => const AdvisoriesScreen(),
         ),
@@ -219,8 +215,8 @@ GoRouter createAppRouter() => GoRouter(
           builder: (_, __) => const WasteManagementDashboard(),
         ),
         GoRoute(
-          path: '/waste-management/map',
-          builder: (_, __) => const HotspotMapScreen(),
+          path: '/waste-management/collection-map',
+          builder: (_, __) => const WasteCollectionMapScreen(),
         ),
         GoRoute(
           path: '/waste-management/advisories',
@@ -260,7 +256,11 @@ GoRouter createAppRouter() => GoRouter(
         ),
         GoRoute(
           path: '/admin/waste',
-          builder: (_, __) => const WasteManagementDashboard(),
+          builder: (_, __) => const AdminWasteOverviewScreen(),
+        ),
+        GoRoute(
+          path: '/admin/community',
+          builder: (_, __) => const CommunityScreen(),
         ),
         GoRoute(
           path: '/admin/announcements',
