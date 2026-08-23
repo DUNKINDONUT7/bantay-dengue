@@ -13,6 +13,7 @@ if (-not (Test-Path "android")) {
 flutter pub get
 
 Write-Host ""
-Write-Host "Setup complete. Run demo web:"
-Write-Host "  flutter run -d chrome --dart-define=APP_MODE=demo"
-Write-Host "Or select 'BantayDengue Web (Demo)' in VS Code Run and Debug."
+Write-Host "Setup complete. Run web (uses the built-in fallback Supabase project):"
+Write-Host "  flutter run -d chrome"
+Write-Host "Or copy env.json.example to env.json with your own project, then:"
+Write-Host "  flutter run -d chrome --dart-define-from-file=env.json"

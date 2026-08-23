@@ -47,6 +47,10 @@ env.json
 *.env
 .env
 .env.*
+# ...except the checked-in template itself — .env.* above would otherwise
+# silently exclude it too (it did: .env.example was never actually in the
+# repo despite existing on disk, until this line was added).
+!.env.example
 /android/app/release
 
 # Firebase — NEVER commit these

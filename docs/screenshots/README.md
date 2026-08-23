@@ -24,4 +24,4 @@ in through the actual login screen — not mocked or staged data.
 | `admin/03_verification_queue.png` | Admin-side report verification |
 | `admin/04_announcements.png` | Announcement publishing |
 
-See `docs/API_TEST_LOG.md` for the accompanying live API/RLS test evidence.
+See `docs/archive/API_TEST_LOG.md` for the accompanying live API/RLS test evidence from that pass (archived — see `docs/archive/README.md`).

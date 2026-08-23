@@ -15,6 +15,7 @@ fi
 flutter pub get
 
 echo
-echo "Setup complete. Run demo web:"
-echo "  flutter run -d chrome --dart-define=APP_MODE=demo"
-echo "Or select 'BantayDengue Web (Demo)' in VS Code Run and Debug."
+echo "Setup complete. Run web (uses the built-in fallback Supabase project):"
+echo "  flutter run -d chrome"
+echo "Or copy env.json.example to env.json with your own project, then:"
+echo "  flutter run -d chrome --dart-define-from-file=env.json"
