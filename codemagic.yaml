@@ -1,63 +1,4 @@
 workflows:
-  ios-testflight:
-    name: BantayDengue iOS (TestFlight — smoothest way to test on your iPhone)
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-    environment:
-      flutter: stable
-      xcode: latest
-      cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.bantaydengue.bantayDengue
-      vars:
-        BUNDLE_ID: "com.bantaydengue.bantayDengue"
-        # Add SUPABASE_URL and SUPABASE_ANON_KEY as Environment variables
-        # on this workflow in the Codemagic UI (mark them Secret).
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-      cancel_previous_builds: true
-    scripts:
-      - name: Set up code signing settings on Xcode project
-        script: xcode-project use-profiles
-      - name: Write env.json from encrypted vars
-        script: |
-          cat > env.json <<EOF
-          {
-            "SUPABASE_URL": "$SUPABASE_URL",
-            "SUPABASE_ANON_KEY": "$SUPABASE_ANON_KEY"
-          }
-          EOF
-      - name: Get Flutter packages
-        script: flutter pub get
-      - name: Install CocoaPods dependencies
-        script: |
-          find . -name "Podfile" -execdir pod install \;
-      - name: Flutter build ipa
-        script: |
-          flutter build ipa --release \
-            --dart-define-from-file=env.json \
-            --export-options-plist=/Users/builder/export_options.plist
-    artifacts:
-      - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
-    publishing:
-      email:
-        recipients:
-          - villaramaejay@gmail.com
-        notify:
-          success: true
-          failure: true
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
-        beta_groups:
-          - App Store Connect Users
-
   # FREE PATH — no Apple Developer Program needed.
   # Builds an unsigned .ipa. Sign + install it yourself on Windows using
   # Sideloadly (sideloadly.io) with a free Apple ID. Re-sign every 7 days
@@ -114,3 +55,67 @@ workflows:
         notify:
           success: true
           failure: true
+
+  # PAID PATH (needs Apple Developer Program, $99/yr) — disabled for now.
+  # To re-enable: connect an App Store Connect integration in Codemagic
+  # (Settings > Integrations), then add:
+  #   integrations:
+  #     app_store_connect: <your integration name>
+  # under this workflow's `environment:` block.
+  #
+  # ios-testflight:
+  #   name: BantayDengue iOS (TestFlight — smoothest way to test on your iPhone)
+  #   max_build_duration: 60
+  #   instance_type: mac_mini_m2
+  #   environment:
+  #     flutter: stable
+  #     xcode: latest
+  #     cocoapods: default
+  #     ios_signing:
+  #       distribution_type: app_store
+  #       bundle_identifier: com.bantaydengue.bantayDengue
+  #     vars:
+  #       BUNDLE_ID: "com.bantaydengue.bantayDengue"
+  #   triggering:
+  #     events:
+  #       - push
+  #     branch_patterns:
+  #       - pattern: main
+  #         include: true
+  #     cancel_previous_builds: true
+  #   scripts:
+  #     - name: Set up code signing settings on Xcode project
+  #       script: xcode-project use-profiles
+  #     - name: Write env.json from encrypted vars
+  #       script: |
+  #         cat > env.json <<EOF
+  #         {
+  #           "SUPABASE_URL": "$SUPABASE_URL",
+  #           "SUPABASE_ANON_KEY": "$SUPABASE_ANON_KEY"
+  #         }
+  #         EOF
+  #     - name: Get Flutter packages
+  #       script: flutter pub get
+  #     - name: Install CocoaPods dependencies
+  #       script: |
+  #         find . -name "Podfile" -execdir pod install \;
+  #     - name: Flutter build ipa
+  #       script: |
+  #         flutter build ipa --release \
+  #           --dart-define-from-file=env.json \
+  #           --export-options-plist=/Users/builder/export_options.plist
+  #   artifacts:
+  #     - build/ios/ipa/*.ipa
+  #     - /tmp/xcodebuild_logs/*.log
+  #   publishing:
+  #     email:
+  #       recipients:
+  #         - villaramaejay@gmail.com
+  #       notify:
+  #         success: true
+  #         failure: true
+  #     app_store_connect:
+  #       auth: integration
+  #       submit_to_testflight: true
+  #       beta_groups:
+  #         - App Store Connect Users
