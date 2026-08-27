@@ -12,11 +12,8 @@ workflows:
         bundle_identifier: com.bantaydengue.bantayDengue
       vars:
         BUNDLE_ID: "com.bantaydengue.bantayDengue"
-        # Set these as encrypted group variables in Codemagic UI (Environment variables > Variable group "supabase")
-        # SUPABASE_URL
-        # SUPABASE_ANON_KEY
-      groups:
-        - supabase
+        # Add SUPABASE_URL and SUPABASE_ANON_KEY as Environment variables
+        # on this workflow in the Codemagic UI (mark them Secret).
     triggering:
       events:
         - push
@@ -75,11 +72,8 @@ workflows:
       cocoapods: default
       vars:
         BUNDLE_ID: "com.bantaydengue.bantayDengue"
-        # Set these as encrypted group variables in Codemagic UI (Environment variables > Variable group "supabase")
-        # SUPABASE_URL
-        # SUPABASE_ANON_KEY
-      groups:
-        - supabase
+        # Add SUPABASE_URL and SUPABASE_ANON_KEY as Environment variables
+        # on this workflow in the Codemagic UI (mark them Secret).
     triggering:
       events:
         - push
@@ -107,7 +101,7 @@ workflows:
             --dart-define-from-file=env.json
       - name: Package unsigned .ipa
         script: |
-          mkdir -p build/ios/unsigned/Payload
+          mkdir -p build/ios/unsigned/Payload build/ios/ipa
           cp -r build/ios/iphoneos/Runner.app build/ios/unsigned/Payload/
           cd build/ios/unsigned
           zip -r ../ipa/BantayDengue-unsigned.ipa Payload
